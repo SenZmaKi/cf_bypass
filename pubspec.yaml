@@ -1,0 +1,26 @@
+name: cf_bypass
+description: A Flutter package for detecting CloudFlare-style protection and solving browser challenges in WebView.
+version: 0.0.1
+homepage: https://github.com/SenZmaKi/cf_bypass
+repository: https://github.com/SenZmaKi/cf_bypass
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cookie_jar: ^4.0.8
+
+  flutter_inappwebview: ^6.1.5
+
+  logging: ^1.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:

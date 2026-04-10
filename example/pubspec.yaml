@@ -1,0 +1,27 @@
+name: cf_bypass_example
+description: Demonstrates how to use the cf_bypass package.
+publish_to: 'none'
+
+version: 1.0.0
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cf_bypass:
+    path: ../
+
+  dio: ^5.4.0
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
