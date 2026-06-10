@@ -100,17 +100,14 @@ class _SessionPicker extends StatelessWidget {
           GestureDetector(
             onTap: hasHistory ? onPick : null,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: hasHistory
                     ? _amber.withValues(alpha: 0.1)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(4),
                 border: Border.all(
-                  color: hasHistory
-                      ? _amber.withValues(alpha: 0.3)
-                      : _border,
+                  color: hasHistory ? _amber.withValues(alpha: 0.3) : _border,
                 ),
               ),
               child: Text(
@@ -135,8 +132,7 @@ class _ProbeButton extends StatelessWidget {
   final bool isProbing;
   final VoidCallback onPressed;
 
-  const _ProbeButton(
-      {required this.isProbing, required this.onPressed});
+  const _ProbeButton({required this.isProbing, required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -147,12 +143,9 @@ class _ProbeButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           foregroundColor: _blue,
           side: BorderSide(color: _blue.withValues(alpha: 0.5)),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(6)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           textStyle: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-              letterSpacing: 1.2),
+              fontWeight: FontWeight.w700, fontSize: 12, letterSpacing: 1.2),
         ),
         child: isProbing
             ? Row(
@@ -167,8 +160,7 @@ class _ProbeButton extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  const Text('PROBING…',
-                      style: TextStyle(color: _muted)),
+                  const Text('PROBING…', style: TextStyle(color: _muted)),
                 ],
               )
             : const Row(
@@ -196,10 +188,12 @@ class _ProbeResultCard extends StatelessWidget {
       return ('ERROR', _red, Icons.error_outline_rounded);
     }
     return switch (result.kind) {
-      CfProtectionKind.challenge =>
-        ('CHALLENGE', _amber, Icons.shield_outlined),
-      CfProtectionKind.blocked =>
-        ('BLOCKED', _red, Icons.block_rounded),
+      CfProtectionKind.challenge => (
+          'CHALLENGE',
+          _amber,
+          Icons.shield_outlined
+        ),
+      CfProtectionKind.blocked => ('BLOCKED', _red, Icons.block_rounded),
       _ => ('CLEAN', _green, Icons.check_circle_outline_rounded),
     };
   }
@@ -224,13 +218,12 @@ class _ProbeResultCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 7, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                        color: color.withValues(alpha: 0.3)),
+                    border: Border.all(color: color.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -265,9 +258,7 @@ class _ProbeResultCard extends StatelessWidget {
                 Text(
                   '${result.duration.inMilliseconds}ms',
                   style: const TextStyle(
-                      color: _muted,
-                      fontSize: 11,
-                      fontFamily: 'monospace'),
+                      color: _muted, fontSize: 11, fontFamily: 'monospace'),
                 ),
                 if (onTap != null) ...[
                   const SizedBox(width: 4),
@@ -280,17 +271,14 @@ class _ProbeResultCard extends StatelessWidget {
             Text(
               result.url,
               style: const TextStyle(
-                  color: _dim,
-                  fontSize: 11,
-                  fontFamily: 'monospace'),
+                  color: _dim, fontSize: 11, fontFamily: 'monospace'),
               overflow: TextOverflow.ellipsis,
             ),
             if (result.hasError && result.error != null) ...[
               const SizedBox(height: 4),
               Text(
                 result.error!,
-                style:
-                    const TextStyle(color: _red, fontSize: 10),
+                style: const TextStyle(color: _red, fontSize: 10),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -302,8 +290,7 @@ class _ProbeResultCard extends StatelessWidget {
                 spacing: 5,
                 runSpacing: 4,
                 children: detection.matchedIndicators
-                    .map((ind) =>
-                        _IndicatorChip(label: ind, color: color))
+                    .map((ind) => _IndicatorChip(label: ind, color: color))
                     .toList(),
               ),
             ],
@@ -319,26 +306,20 @@ class _IndicatorChip extends StatelessWidget {
   final String label;
   final Color color;
 
-  const _IndicatorChip(
-      {required this.label, required this.color});
+  const _IndicatorChip({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(3),
-        border:
-            Border.all(color: color.withValues(alpha: 0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Text(
         label,
-        style: TextStyle(
-            color: color,
-            fontSize: 9,
-            fontFamily: 'monospace'),
+        style: TextStyle(color: color, fontSize: 9, fontFamily: 'monospace'),
       ),
     );
   }
@@ -360,8 +341,8 @@ class _ProbeDetailSheet extends StatelessWidget {
     if (result.hasError) return ('ERROR', _red);
     return switch (result.kind) {
       CfProtectionKind.challenge => ('CHALLENGE', _amber),
-      CfProtectionKind.blocked  => ('BLOCKED', _red),
-      _                         => ('CLEAN', _green),
+      CfProtectionKind.blocked => ('BLOCKED', _red),
+      _ => ('CLEAN', _green),
     };
   }
 
@@ -378,16 +359,14 @@ class _ProbeDetailSheet extends StatelessWidget {
             height: 4,
             margin: const EdgeInsets.symmetric(vertical: 8),
             decoration: BoxDecoration(
-                color: _border,
-                borderRadius: BorderRadius.circular(2)),
+                color: _border, borderRadius: BorderRadius.circular(2)),
           ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Row(
             children: [
-              const Icon(Icons.radar_rounded,
-                  size: 18, color: _blue),
+              const Icon(Icons.radar_rounded, size: 18, color: _blue),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -405,20 +384,17 @@ class _ProbeDetailSheet extends StatelessWidget {
                     Text(
                       '${result.duration.inMilliseconds}ms  ·  '
                       '${result.statusCode != null ? 'HTTP ${result.statusCode}' : 'No response'}',
-                      style: const TextStyle(
-                          color: _muted, fontSize: 11),
+                      style: const TextStyle(color: _muted, fontSize: 11),
                     ),
                   ],
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                      color: color.withValues(alpha: 0.3)),
+                  border: Border.all(color: color.withValues(alpha: 0.3)),
                 ),
                 child: Text(
                   label,
@@ -440,22 +416,15 @@ class _ProbeDetailSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
             children: [
               _ResultRow(label: 'URL', value: result.url, mono: true),
-              if (result.finalUrl != null &&
-                  result.finalUrl != result.url)
+              if (result.finalUrl != null && result.finalUrl != result.url)
                 _ResultRow(
-                    label: 'FINAL URL',
-                    value: result.finalUrl!,
-                    mono: true),
+                    label: 'FINAL URL', value: result.finalUrl!, mono: true),
               if (result.statusCode != null)
                 _ResultRow(
-                    label: 'STATUS',
-                    value: '${result.statusCode}',
-                    mono: true),
+                    label: 'STATUS', value: '${result.statusCode}', mono: true),
               if (result.hasError && result.error != null)
                 _ResultRow(
-                    label: 'ERROR',
-                    value: result.error!,
-                    valueColor: _red),
+                    label: 'ERROR', value: result.error!, valueColor: _red),
               if (result.uaUsed != null)
                 _ResultRow(
                   label: 'USER-AGENT USED',
@@ -471,10 +440,10 @@ class _ProbeDetailSheet extends StatelessWidget {
                 ),
               if (detection != null) ...[
                 const SizedBox(height: 4),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 10),
                   child: Row(
-                    children: const [
+                    children: [
                       Text(
                         'DETECTION',
                         style: TextStyle(
@@ -499,8 +468,7 @@ class _ProbeDetailSheet extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
                           'MATCHED INDICATORS',
@@ -515,10 +483,9 @@ class _ProbeDetailSheet extends StatelessWidget {
                         Wrap(
                           spacing: 6,
                           runSpacing: 5,
-                          children: detection
-                              .matchedIndicators
-                              .map((ind) => _IndicatorChip(
-                                  label: ind, color: color))
+                          children: detection.matchedIndicators
+                              .map((ind) =>
+                                  _IndicatorChip(label: ind, color: color))
                               .toList(),
                         ),
                       ],

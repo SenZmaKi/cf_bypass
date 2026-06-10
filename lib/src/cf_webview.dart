@@ -208,9 +208,9 @@ class _CfWebViewState extends State<CfWebView> {
     }
     await _initWebViewCookies();
 
-    // Record the pre-existing bypass fingerprint so we can detect a fresh one.
-    _oldBypassFingerprint =
-        CfCookieHelper.getBypassFingerprint(widget.initialCookies);
+    // Record the actual post-clear WebView fingerprint. If targeted cookie
+    // deletion misses a scoped cookie, do not treat it as a fresh solve.
+    _oldBypassFingerprint = await _getBypassFingerprint();
     _log.fine('🔎 seed fingerprint=${_oldBypassFingerprint ?? '(none)'}');
 
     _resolvedUserAgent = null;
@@ -310,7 +310,6 @@ class _CfWebViewState extends State<CfWebView> {
     _loopCounter = 0;
     _checkPassed = false;
     _loopDetectedFired = false;
-    _oldBypassFingerprint = null;
     _checkTimer?.cancel();
     if (widget.clearAllDataOnInit) {
       await _clearAllData();
@@ -318,6 +317,7 @@ class _CfWebViewState extends State<CfWebView> {
       await _clearCfCookies();
     }
     await _initWebViewCookies();
+    _oldBypassFingerprint = await _getBypassFingerprint();
     await _webController?.loadUrl(
       urlRequest: URLRequest(url: WebUri(widget.url)),
     );
@@ -369,7 +369,12 @@ class _CfWebViewState extends State<CfWebView> {
           cookies.where((c) => CfCookieHelper.isBypassCookie(c.name)).toList();
       _log.fine('🍪 clearing ${cfCookies.length} CF cookie(s)');
       for (final cookie in cfCookies) {
-        await _cookieManager.deleteCookie(url: webUri, name: cookie.name);
+        await _cookieManager.deleteCookie(
+          url: webUri,
+          name: cookie.name,
+          domain: cookie.domain,
+          path: cookie.path ?? '/',
+        );
       }
     } catch (e) {
       _log.warning('⚠ error clearing CF cookies', e);

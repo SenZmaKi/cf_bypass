@@ -4,7 +4,8 @@ part of '../main.dart';
 class ResultSheet extends StatelessWidget {
   final CfBypassResult result;
   final ScrollController scrollController;
-  const ResultSheet({super.key, required this.result, required this.scrollController});
+  const ResultSheet(
+      {super.key, required this.result, required this.scrollController});
 
   @override
   Widget build(BuildContext context) {
@@ -13,9 +14,11 @@ class ResultSheet extends StatelessWidget {
       children: [
         Center(
           child: Container(
-            width: 36, height: 4,
+            width: 36,
+            height: 4,
             margin: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(color: _border, borderRadius: BorderRadius.circular(2)),
+            decoration: BoxDecoration(
+                color: _border, borderRadius: BorderRadius.circular(2)),
           ),
         ),
         // Header
@@ -37,7 +40,9 @@ class ResultSheet extends StatelessWidget {
                       ok ? 'BYPASS SUCCEEDED' : 'BYPASS FAILED',
                       style: TextStyle(
                         color: ok ? _green : _red,
-                        fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 1,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
                       ),
                     ),
                     if (ok)
@@ -60,7 +65,8 @@ class ResultSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
             children: [
               if (!ok && result.error != null) ...[
-                _ResultRow(label: 'ERROR', value: result.error!, valueColor: _red),
+                _ResultRow(
+                    label: 'ERROR', value: result.error!, valueColor: _red),
                 const SizedBox(height: 16),
               ],
               if (result.finalUrl != null)
@@ -93,8 +99,10 @@ class ResultSheet extends StatelessWidget {
                 const Text(
                   'ALL COOKIES',
                   style: TextStyle(
-                    color: _amber, fontSize: 10,
-                    fontWeight: FontWeight.w700, letterSpacing: 1.5,
+                    color: _amber,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.5,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -110,18 +118,18 @@ class ResultSheet extends StatelessWidget {
 
 // ── Result Row ────────────────────────────────────────────────────────────────
 class _ResultRow extends StatelessWidget {
-  final String  label;
-  final String  value;
-  final bool    mono;
-  final bool    copyable;
-  final Color?  valueColor;
-  final Color?  accent;
+  final String label;
+  final String value;
+  final bool mono;
+  final bool copyable;
+  final Color? valueColor;
+  final Color? accent;
 
   const _ResultRow({
     required this.label,
     required this.value,
-    this.mono      = false,
-    this.copyable  = false,
+    this.mono = false,
+    this.copyable = false,
     this.valueColor,
     this.accent,
   });
@@ -137,7 +145,8 @@ class _ResultRow extends StatelessWidget {
             children: [
               if (accent != null)
                 Container(
-                  width: 3, height: 12,
+                  width: 3,
+                  height: 12,
                   margin: const EdgeInsets.only(right: 6),
                   decoration: BoxDecoration(
                     color: accent,
@@ -147,8 +156,10 @@ class _ResultRow extends StatelessWidget {
               Text(
                 label,
                 style: const TextStyle(
-                  color: _muted, fontSize: 10,
-                  fontWeight: FontWeight.w600, letterSpacing: 1.2,
+                  color: _muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.2,
                 ),
               ),
               if (copyable) ...[
@@ -165,9 +176,8 @@ class _ResultRow extends StatelessWidget {
               color: _surface,
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: accent != null
-                    ? accent!.withValues(alpha: 0.3)
-                    : _border,
+                color:
+                    accent != null ? accent!.withValues(alpha: 0.3) : _border,
               ),
             ),
             child: Text(
@@ -213,17 +223,19 @@ class _CookieLine extends StatelessWidget {
                       child: Text(
                         cookie.name,
                         style: const TextStyle(
-                          color: _amber, fontSize: 11,
-                          fontWeight: FontWeight.w600, fontFamily: 'monospace',
+                          color: _amber,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'monospace',
                         ),
                       ),
                     ),
                     Row(
                       children: [
                         if (cookie.isSecure == true)
-                          _Chip(label: 'secure', color: _green),
+                          const _Chip(label: 'secure', color: _green),
                         if (cookie.isHttpOnly == true)
-                          _Chip(label: 'httpOnly', color: _blue),
+                          const _Chip(label: 'httpOnly', color: _blue),
                       ],
                     ),
                   ],
@@ -232,22 +244,20 @@ class _CookieLine extends StatelessWidget {
                 Text(
                   cookie.value,
                   style: const TextStyle(
-                    color: _dim, fontSize: 10, fontFamily: 'monospace',
+                    color: _dim,
+                    fontSize: 10,
+                    fontFamily: 'monospace',
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (cookie.domain != null || cookie.path != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 3),
-                    child: Text(
-                      [
-                        if (cookie.domain != null) cookie.domain!,
-                        if (cookie.path   != null) cookie.path!,
-                      ].join('  '),
-                      style: const TextStyle(color: _muted, fontSize: 10),
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(
+                    [cookie.domain, cookie.path].join('  '),
+                    style: const TextStyle(color: _muted, fontSize: 10),
                   ),
+                ),
               ],
             ),
           ),
@@ -308,7 +318,8 @@ class _CopyButtonState extends State<_CopyButton> {
               _copied ? 'Copied' : 'Copy',
               style: TextStyle(
                 color: _copied ? _green : _muted,
-                fontSize: 10, fontWeight: FontWeight.w600,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -321,7 +332,7 @@ class _CopyButtonState extends State<_CopyButton> {
 // ── Chip ──────────────────────────────────────────────────────────────────────
 class _Chip extends StatelessWidget {
   final String label;
-  final Color  color;
+  final Color color;
   const _Chip({required this.label, required this.color});
 
   @override
@@ -336,7 +347,8 @@ class _Chip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w600),
+        style:
+            TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w600),
       ),
     );
   }
