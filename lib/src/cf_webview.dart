@@ -16,6 +16,16 @@ import 'cf_cookie_helper.dart';
 /// times out, is cancelled, or is retried manually.
 typedef CfWebViewErrorCallback = FutureOr<bool> Function(Object error);
 
+/// Validates a candidate bypass result before [CfWebView] reports completion.
+///
+/// Return `true` once your app has verified the captured cookies and user-agent
+/// can access the protected resource. Return `false` to make [CfWebView] clear
+/// configured cookies and retry the challenge. Throwing from the callback
+/// reports a failed bypass through [CfWebView.onFailure].
+typedef CfWebViewSuccessCallback = FutureOr<bool> Function(
+  CfBypassResult result,
+);
+
 /// Allows programmatic control of a running [CfWebView].
 ///
 /// Pass an instance to [CfWebView.controller] and keep a reference in your
@@ -51,9 +61,10 @@ class CfBypassController {
 /// reports a solvable challenge. The widget handles cookie seeding, challenge
 /// polling, stall detection, and timeout automatically.
 ///
-/// When the challenge is solved, [onSuccess] is called with a [CfBypassResult]
-/// containing the cookies and user-agent you need to replay the original
-/// request with your own HTTP client.
+/// When bypass-looking cookies are captured, [onSuccess] is called with a
+/// [CfBypassResult] containing the cookies and user-agent. Return `true` after
+/// verifying those artifacts can replay the protected request, or `false` to
+/// retry.
 ///
 /// ```dart
 /// Navigator.push(
@@ -61,8 +72,11 @@ class CfBypassController {
 ///   MaterialPageRoute(
 ///     builder: (_) => CfWebView(
 ///       url: 'https://example.com/protected',
-///       onSuccess: (result) {
-///         // Wire result.cookies and result.userAgent into your HTTP client.
+///       onSuccess: (result) async {
+///         final verified = await replayOriginalRequest(result);
+///         if (!verified) return false;
+///         Navigator.pop(context, result);
+///         return true;
 ///       },
 ///     ),
 ///   ),
@@ -110,8 +124,12 @@ class CfWebView extends StatefulWidget {
   /// [clearAllDataOnInit] is `true` all cookies are wiped regardless.
   final bool clearCfCookiesOnInit;
 
-  /// Called once the challenge is solved and cookies are ready.
-  final void Function(CfBypassResult result)? onSuccess;
+  /// Required validator called once bypass-looking cookies are captured.
+  ///
+  /// Return `true` only after validating the result against your protected
+  /// resource. Return `false` to retry the bypass. Throwing from this callback
+  /// reports a failed bypass through [onFailure].
+  final CfWebViewSuccessCallback onSuccess;
 
   /// Called when the bypass cannot be completed (timeout, error).
   final void Function(CfBypassResult result)? onFailure;
@@ -152,7 +170,7 @@ class CfWebView extends StatefulWidget {
     this.controller,
     this.clearAllDataOnInit = false,
     this.clearCfCookiesOnInit = true,
-    this.onSuccess,
+    required this.onSuccess,
     this.onFailure,
     this.onCancelled,
     this.onPageFinishedLoading,
@@ -177,13 +195,14 @@ class _CfWebViewState extends State<CfWebView> {
   String? _lastFinishedUrl;
   String? _resolvedUserAgent;
   int _loopCounter = 0;
-  bool _checkPassed = false;
   bool _loopDetectedFired = false;
   Timer? _checkTimer;
   Timer? _timeoutTimer;
   late DateTime _startedAt;
   bool _ready = false;
   bool _disposed = false;
+  bool _completed = false;
+  bool _successValidationInProgress = false;
   bool _errorRetryInProgress = false;
 
   @override
@@ -236,7 +255,9 @@ class _CfWebViewState extends State<CfWebView> {
   }
 
   void _onTimeout() {
-    if (_disposed || _checkPassed) return;
+    if (_disposed || _completed) return;
+    _completed = true;
+    _checkTimer?.cancel();
     _log.warning('⏰ timeout after ${widget.timeout.inSeconds}s');
     widget.onFailure?.call(
       CfBypassResult.timeout(
@@ -282,7 +303,7 @@ class _CfWebViewState extends State<CfWebView> {
     if (request.isForMainFrame == false ||
         widget.onError == null ||
         _disposed ||
-        _checkPassed ||
+        _completed ||
         _errorRetryInProgress) {
       return;
     }
@@ -290,7 +311,7 @@ class _CfWebViewState extends State<CfWebView> {
     _errorRetryInProgress = true;
     try {
       final shouldRetry = await widget.onError!(error);
-      if (shouldRetry && !_disposed && !_checkPassed) {
+      if (shouldRetry && !_disposed && !_completed) {
         _log.info('🔄 retry requested after webview error');
         await _retry();
       }
@@ -307,30 +328,49 @@ class _CfWebViewState extends State<CfWebView> {
   }
 
   Future<void> _checkClearance() async {
-    if (_disposed || _checkPassed) return;
+    if (_disposed || _completed || _successValidationInProgress) return;
 
     final fingerprint = await _getBypassFingerprint();
     _log.fine(
         '🔍 check  fingerprint=${fingerprint ?? '(none)'}  old=${_oldBypassFingerprint ?? '(none)'}  loop=$_loopCounter');
 
     if (fingerprint != null && fingerprint != _oldBypassFingerprint) {
-      _checkPassed = true;
-      _timeoutTimer?.cancel();
-      await _captureUserAgent();
-      final cookies = await _exportCookies();
-      final elapsed = DateTime.now().difference(_startedAt);
-      _log.info(
-          '✅ bypass!  cookies=${cookies.length}  duration=${elapsed.inMilliseconds}ms  ua=${_resolvedUserAgent ?? '(none)'}');
-      widget.onSuccess?.call(
-        CfBypassResult.success(
+      try {
+        await _captureUserAgent();
+        final userAgent = _resolvedUserAgent ?? widget.userAgent;
+        if (userAgent == null || userAgent.isEmpty) {
+          _fail(
+            'Could not read WebView user-agent',
+            CfBypassFailedException(
+              url: widget.url,
+              message: 'Could not read WebView user-agent',
+            ),
+          );
+          return;
+        }
+        final cookies = await _exportCookies();
+        final elapsed = DateTime.now().difference(_startedAt);
+        final result = CfBypassResult.success(
           url: widget.url,
           finalUrl: _lastFinishedUrl,
-          userAgent: _resolvedUserAgent ?? widget.userAgent,
+          userAgent: userAgent,
           cookies: cookies,
           duration: elapsed,
           attempts: _loopCounter + 1,
-        ),
-      );
+        );
+        _log.info(
+            '✅ bypass candidate  cookies=${cookies.length}  duration=${elapsed.inMilliseconds}ms  ua=$userAgent');
+        await _validateSuccess(result);
+      } catch (e) {
+        _fail(
+          'Could not capture bypass result: $e',
+          CfBypassFailedException(
+            url: widget.url,
+            message: 'Could not capture bypass result',
+            error: e,
+          ),
+        );
+      }
     } else {
       _loopCounter++;
       _log.fine(
@@ -346,10 +386,14 @@ class _CfWebViewState extends State<CfWebView> {
   Future<void> _retry() async {
     if (_disposed) return;
     _log.info('🔄 retry  clearing loop state');
+    _startedAt = DateTime.now();
     _loopCounter = 0;
-    _checkPassed = false;
+    _completed = false;
+    _successValidationInProgress = false;
     _loopDetectedFired = false;
     _checkTimer?.cancel();
+    _timeoutTimer?.cancel();
+    _timeoutTimer = Timer(widget.timeout, _onTimeout);
     if (widget.clearAllDataOnInit) {
       await _clearAllData();
     } else if (widget.clearCfCookiesOnInit) {
@@ -363,7 +407,8 @@ class _CfWebViewState extends State<CfWebView> {
   }
 
   void _cancel() {
-    if (_disposed || _checkPassed) return;
+    if (_disposed || _completed) return;
+    _completed = true;
     _log.info('✖ cancelled');
     _checkTimer?.cancel();
     _timeoutTimer?.cancel();
@@ -466,6 +511,59 @@ class _CfWebViewState extends State<CfWebView> {
               isHttpOnly: wc.isHttpOnly,
             ))
         .toList();
+  }
+
+  Future<void> _validateSuccess(CfBypassResult result) async {
+    if (_disposed || _completed) return;
+
+    _successValidationInProgress = true;
+    try {
+      final accepted = await widget.onSuccess(result);
+      if (_disposed || _completed) return;
+
+      if (accepted) {
+        _completed = true;
+        _checkTimer?.cancel();
+        _timeoutTimer?.cancel();
+        _log.info('✅ bypass accepted by success validator');
+        return;
+      }
+
+      _log.info('🔄 bypass candidate rejected by success validator');
+      await _retry();
+    } catch (e) {
+      _fail(
+        'Success validation failed: $e',
+        CfBypassFailedException(
+          url: widget.url,
+          message: 'Success validation failed',
+          error: e,
+        ),
+      );
+    } finally {
+      if (!_disposed && !_completed) {
+        _successValidationInProgress = false;
+      }
+    }
+  }
+
+  void _fail(String error, CfException exception) {
+    if (_disposed || _completed) return;
+    _completed = true;
+    _checkTimer?.cancel();
+    _timeoutTimer?.cancel();
+    _log.warning('⚠ bypass failed: $error');
+    widget.onFailure?.call(
+      CfBypassResult.failure(
+        url: widget.url,
+        finalUrl: _lastFinishedUrl ?? _lastStartedUrl,
+        error: error,
+        exception: exception,
+        userAgent: _resolvedUserAgent ?? widget.userAgent,
+        duration: DateTime.now().difference(_startedAt),
+        attempts: _loopCounter + 1,
+      ),
+    );
   }
 
   @override

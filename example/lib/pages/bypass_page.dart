@@ -56,14 +56,30 @@ class _BypassPageState extends State<BypassPage> {
 
   // ── CfWebView callbacks ──────────────────────────────────────────────────
 
-  void _onSuccess(CfBypassResult result) {
+  Future<bool> _onSuccess(CfBypassResult result) async {
+    final valid = await _validateBypassResult(result);
+    if (!valid) {
+      _log(
+        'Bypass candidate rejected — replay still protected',
+        icon: Icons.refresh_rounded,
+        color: _amber,
+      );
+      if (mounted) {
+        setState(() {
+          _state = _BypassState.loading;
+          _loopDetected = false;
+        });
+      }
+      return false;
+    }
+
     _log(
       'Bypass succeeded · ${result.cookies.length} cookies · '
       '${result.duration?.inSeconds ?? 0}s · ${result.attempts} attempt(s)',
       icon: Icons.check_circle_rounded,
       color: _green,
     );
-    if (!mounted) return;
+    if (!mounted) return true;
     setState(() {
       _state = _BypassState.success;
       _result = result;
@@ -71,6 +87,51 @@ class _BypassPageState extends State<BypassPage> {
     Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) Navigator.pop(context, result);
     });
+    return true;
+  }
+
+  Future<bool> _validateBypassResult(CfBypassResult result) async {
+    _log(
+      'Validating captured cookies against target URL',
+      icon: Icons.fact_check_rounded,
+      color: _blue,
+    );
+    try {
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+        validateStatus: (_) => true,
+        responseType: ResponseType.plain,
+        headers: {
+          if (result.userAgent != null) 'user-agent': result.userAgent,
+          if (result.cookies.isNotEmpty)
+            'cookie': CfCookieHelper.cookiesToHeader(result.cookies),
+        },
+      ));
+
+      final response = await dio.get<String>(widget.url);
+      final flatHeaders = <String, String>{};
+      response.headers.forEach(
+        (name, values) => flatHeaders[name.toLowerCase()] = values.join(', '),
+      );
+      final detection = CfDetector.detect(CfDetectionRequest(
+        url: response.realUri.toString(),
+        statusCode: response.statusCode ?? 0,
+        body: response.data ?? '',
+        headers: flatHeaders,
+      ));
+      final statusCode = response.statusCode ?? 0;
+      return statusCode > 0 &&
+          statusCode < 400 &&
+          detection.kind == CfProtectionKind.none;
+    } catch (e) {
+      _log(
+        'Validation request failed: $e',
+        icon: Icons.warning_amber_rounded,
+        color: _red,
+      );
+      return false;
+    }
   }
 
   void _onFailure(CfBypassResult result) {

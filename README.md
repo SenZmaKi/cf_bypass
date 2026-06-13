@@ -67,11 +67,18 @@ Navigator.push(
           domain: 'example.com',
         ),
       ],
-      onSuccess: (result) {
+      onSuccess: (result) async {
+        // Verify the captured cookies/user-agent against your protected
+        // resource. Return false if the page is still protected so CfWebView
+        // clears configured cookies and retries.
+        final verified = await replayOriginalRequest(result);
+        if (!verified) return false;
+
         print(result.userAgent);
         print(result.cfClearanceCookie);
         print(result.cookies);
         Navigator.pop(context, result);
+        return true;
       },
       onFailure: (result) {
         print(result.error);
@@ -89,6 +96,11 @@ Navigator.push(
 `onError` is called for main-frame WebView load errors. Return `true` to let
 `CfWebView` clear its configured cookie state and reload the original URL, or
 return `false` to keep waiting until success, manual retry, cancel, or timeout.
+
+`onSuccess` is called with a bypass candidate after the WebView captures
+CloudFlare/DDoS-Guard cookies. Return `true` only after your app verifies those
+cookies and the captured user-agent can access the protected resource. Return
+`false` to retry the bypass.
 
 Check [example](https://github.com/SenZmaKi/cf_bypass/tree/main/example) for more details.
 

@@ -11,11 +11,12 @@ import 'cf_browser_cookie.dart';
 /// ```dart
 /// CfWebView(
 ///   url: 'https://example.com',
-///   onSuccess: (result) {
+///   onSuccess: (result) async {
 ///     if (result.success) {
 ///       print(result.userAgent);
 ///       print(result.cfClearanceCookie);
 ///     }
+///     return replayOriginalRequest(result);
 ///   },
 /// )
 /// ```
@@ -73,15 +74,30 @@ class CfBypassResult {
   /// Creates a successful [CfBypassResult] from raw cookie and user-agent data.
   ///
   /// Automatically extracts [cfClearanceCookie] and [ddosCookie] from
-  /// [cookies].
+  /// [cookies]. Throws [ArgumentError] when [userAgent] is empty or [cookies]
+  /// does not contain a `cf_clearance` or `__ddg*` cookie.
   factory CfBypassResult.success({
     required String url,
     String? finalUrl,
-    String? userAgent,
+    required String userAgent,
     List<CfBrowserCookie> cookies = const [],
     Duration? duration,
     int attempts = 1,
   }) {
+    if (userAgent.isEmpty) {
+      throw ArgumentError.value(
+        userAgent,
+        'userAgent',
+        'Successful bypass results require a non-empty user-agent.',
+      );
+    }
+    if (CfCookieHelper.getBypassFingerprint(cookies) == null) {
+      throw ArgumentError.value(
+        cookies,
+        'cookies',
+        'Successful bypass results require a cf_clearance or __ddg* cookie.',
+      );
+    }
     return CfBypassResult(
       success: true,
       url: url,
