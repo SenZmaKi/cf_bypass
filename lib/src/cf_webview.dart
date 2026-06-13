@@ -207,6 +207,7 @@ class _CfWebViewState extends State<CfWebView> {
   bool _clearanceCheckInProgress = false;
   bool _successValidationInProgress = false;
   bool _errorRetryInProgress = false;
+  bool _seedFingerprintValidated = false;
 
   @override
   void initState() {
@@ -269,6 +270,7 @@ class _CfWebViewState extends State<CfWebView> {
     _clearanceCheckInProgress = false;
     _successValidationInProgress = false;
     _loopDetectedFired = false;
+    _seedFingerprintValidated = false;
     _checkTimer?.cancel();
     _pollTimer?.cancel();
     _pollTimer = null;
@@ -400,7 +402,14 @@ class _CfWebViewState extends State<CfWebView> {
     _log.fine(
         '🔍 check  fingerprint=${fingerprint ?? '(none)'}  old=${_oldBypassFingerprint ?? '(none)'}  loop=$_loopCounter');
 
-    if (fingerprint != null && fingerprint != _oldBypassFingerprint) {
+    final isChangedFingerprint =
+        fingerprint != null && fingerprint != _oldBypassFingerprint;
+    final shouldValidateSeedFingerprint = fingerprint != null &&
+        fingerprint == _oldBypassFingerprint &&
+        !_seedFingerprintValidated;
+
+    if (isChangedFingerprint || shouldValidateSeedFingerprint) {
+      if (shouldValidateSeedFingerprint) _seedFingerprintValidated = true;
       try {
         await _captureUserAgent();
         if (!_isCurrentAttempt(attemptId) || _completed) return;
@@ -427,8 +436,10 @@ class _CfWebViewState extends State<CfWebView> {
           duration: elapsed,
           attempts: _loopCounter + 1,
         );
+        final candidateKind =
+            isChangedFingerprint ? 'changed fingerprint' : 'seed fingerprint';
         _log.info(
-            '✅ bypass candidate  cookies=${cookies.length}  duration=${elapsed.inMilliseconds}ms  ua=$userAgent');
+            '✅ bypass candidate ($candidateKind)  cookies=${cookies.length}  duration=${elapsed.inMilliseconds}ms  ua=$userAgent');
         await _validateSuccess(result, attemptId);
       } catch (e) {
         _fail(
