@@ -6,6 +6,6 @@ void main() {
   testWidgets('CF bypass example renders', (tester) async {
     await tester.pumpWidget(const CfBypassApp());
 
-    expect(find.text('CF BYPASS LAB'), findsOneWidget);
+    expect(find.text('CF BYPASS'), findsOneWidget);
   });
 }

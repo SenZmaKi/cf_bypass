@@ -9,6 +9,13 @@ import 'cf_bypass_result.dart';
 import 'cf_exception.dart';
 import 'cf_cookie_helper.dart';
 
+/// Handles a WebView load error and decides whether [CfWebView] should retry.
+///
+/// Return `true` to clear configured cookies and reload [CfWebView.url].
+/// Return `false` to keep the current session running until it succeeds,
+/// times out, is cancelled, or is retried manually.
+typedef CfWebViewErrorCallback = FutureOr<bool> Function(Object error);
+
 /// Allows programmatic control of a running [CfWebView].
 ///
 /// Pass an instance to [CfWebView.controller] and keep a reference in your
@@ -124,8 +131,16 @@ class CfWebView extends StatefulWidget {
   /// Called when the page title changes.
   final void Function(String title)? onTitleChanged;
 
-  /// Called when an error occurs in the WebView.
-  final void Function(Object error)? onError;
+  /// Called after a main-frame WebView load error.
+  ///
+  /// This is useful for app-specific network handling. For example, callers
+  /// can inspect the platform WebView error and retry only for offline, DNS,
+  /// or timeout failures. Subresource errors are ignored by this retry hook.
+  ///
+  /// Return `true` to clear configured cookies and reload [url]. Return
+  /// `false` to keep waiting for a successful solve, manual retry, cancel, or
+  /// timeout.
+  final CfWebViewErrorCallback? onError;
 
   const CfWebView({
     super.key,
@@ -169,6 +184,7 @@ class _CfWebViewState extends State<CfWebView> {
   late DateTime _startedAt;
   bool _ready = false;
   bool _disposed = false;
+  bool _errorRetryInProgress = false;
 
   @override
   void initState() {
@@ -256,10 +272,33 @@ class _CfWebViewState extends State<CfWebView> {
     _scheduleCheck();
   }
 
-  void _onLoadError(WebResourceRequest request, WebResourceError error) {
+  Future<void> _onLoadError(
+    WebResourceRequest request,
+    WebResourceError error,
+  ) async {
     _log.warning(
         '⚠ webview error  url=${request.url}  desc=${error.description}');
-    widget.onError?.call(error);
+
+    if (request.isForMainFrame == false ||
+        widget.onError == null ||
+        _disposed ||
+        _checkPassed ||
+        _errorRetryInProgress) {
+      return;
+    }
+
+    _errorRetryInProgress = true;
+    try {
+      final shouldRetry = await widget.onError!(error);
+      if (shouldRetry && !_disposed && !_checkPassed) {
+        _log.info('🔄 retry requested after webview error');
+        await _retry();
+      }
+    } catch (e) {
+      _log.warning('⚠ error retry callback failed', e);
+    } finally {
+      _errorRetryInProgress = false;
+    }
   }
 
   void _scheduleCheck() {

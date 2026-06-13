@@ -76,10 +76,19 @@ Navigator.push(
       onFailure: (result) {
         print(result.error);
       },
+      onError: (error) {
+        // Retry only when your app considers this WebView error transient.
+        print(error);
+        return true;
+      },
     ),
   ),
 );
 ```
+
+`onError` is called for main-frame WebView load errors. Return `true` to let
+`CfWebView` clear its configured cookie state and reload the original URL, or
+return `false` to keep waiting until success, manual retry, cancel, or timeout.
 
 Check [example](https://github.com/SenZmaKi/cf_bypass/tree/main/example) for more details.
 
