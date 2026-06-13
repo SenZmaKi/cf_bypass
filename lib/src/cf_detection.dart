@@ -157,7 +157,18 @@ class CfDetector {
       indicators.add('ddos-guard-marker');
     }
 
-    if (body.contains('data-translate="blocked_why_headline"')) {
+    final hasCloudflareContext = lowerBody.contains('cloudflare') ||
+        lowerBody.contains('cdn-cgi') ||
+        lowerBody.contains('cf-ray') ||
+        lowerBody.contains('cf-error') ||
+        lowerBody.contains('challenges.cloudflare.com');
+
+    if (lowerBody.contains('data-translate="blocked_why_headline"') ||
+        lowerBody.contains('cf-error-code: 1020') ||
+        lowerBody.contains('error code: 1020') ||
+        (hasCloudflareContext &&
+            (lowerBody.contains('access denied') ||
+                lowerBody.contains('you have been blocked')))) {
       indicators.add('cloudflare-blocked-headline');
     }
 

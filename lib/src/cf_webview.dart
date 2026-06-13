@@ -197,11 +197,14 @@ class _CfWebViewState extends State<CfWebView> {
   int _loopCounter = 0;
   bool _loopDetectedFired = false;
   Timer? _checkTimer;
+  Timer? _pollTimer;
   Timer? _timeoutTimer;
   late DateTime _startedAt;
+  int _attemptId = 0;
   bool _ready = false;
   bool _disposed = false;
   bool _completed = false;
+  bool _clearanceCheckInProgress = false;
   bool _successValidationInProgress = false;
   bool _errorRetryInProgress = false;
 
@@ -226,12 +229,14 @@ class _CfWebViewState extends State<CfWebView> {
   void dispose() {
     _disposed = true;
     _checkTimer?.cancel();
+    _pollTimer?.cancel();
     _timeoutTimer?.cancel();
     widget.controller?._detach();
     super.dispose();
   }
 
   Future<void> _initialize() async {
+    final attemptId = _beginAttempt();
     _log.fine(
         '▶ init  url=${widget.url}  timeout=${widget.timeout.inSeconds}s  '
         'stallThreshold=${widget.stallThreshold}  clearAllData=${widget.clearAllDataOnInit}  '
@@ -242,22 +247,51 @@ class _CfWebViewState extends State<CfWebView> {
       await _clearCfCookies();
     }
     await _initWebViewCookies();
+    if (!_isCurrentAttempt(attemptId)) return;
 
     // Record the actual post-clear WebView fingerprint. If targeted cookie
     // deletion misses a scoped cookie, do not treat it as a fresh solve.
     _oldBypassFingerprint = await _getBypassFingerprint();
+    if (!_isCurrentAttempt(attemptId)) return;
     _log.fine('🔎 seed fingerprint=${_oldBypassFingerprint ?? '(none)'}');
 
     _resolvedUserAgent = null;
-    _timeoutTimer = Timer(widget.timeout, _onTimeout);
+    _startPolling(attemptId);
 
     if (mounted) setState(() => _ready = true);
   }
 
-  void _onTimeout() {
-    if (_disposed || _completed) return;
-    _completed = true;
+  int _beginAttempt() {
+    final attemptId = ++_attemptId;
+    _startedAt = DateTime.now();
+    _loopCounter = 0;
+    _completed = false;
+    _clearanceCheckInProgress = false;
+    _successValidationInProgress = false;
+    _loopDetectedFired = false;
     _checkTimer?.cancel();
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _timeoutTimer?.cancel();
+    _timeoutTimer = Timer(widget.timeout, () => _onTimeout(attemptId));
+    return attemptId;
+  }
+
+  bool _isCurrentAttempt(int attemptId) {
+    return !_disposed && attemptId == _attemptId;
+  }
+
+  void _stopAttemptTimers() {
+    _checkTimer?.cancel();
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _timeoutTimer?.cancel();
+  }
+
+  void _onTimeout(int attemptId) {
+    if (!_isCurrentAttempt(attemptId) || _completed) return;
+    _completed = true;
+    _stopAttemptTimers();
     _log.warning('⏰ timeout after ${widget.timeout.inSeconds}s');
     widget.onFailure?.call(
       CfBypassResult.timeout(
@@ -283,6 +317,7 @@ class _CfWebViewState extends State<CfWebView> {
   void _onPageStartedLoading(WebUri? url) {
     _log.fine('→ loading  ${url ?? '(null)'}');
     _lastStartedUrl = url?.toString();
+    _startPolling(_attemptId);
     widget.onPageStartedLoading?.call(url?.toString());
   }
 
@@ -290,7 +325,7 @@ class _CfWebViewState extends State<CfWebView> {
     _log.fine('✓ finished  ${url ?? '(null)'}');
     _lastFinishedUrl = url?.toString();
     widget.onPageFinishedLoading?.call(url?.toString());
-    _scheduleCheck();
+    _scheduleCheck(_attemptId);
   }
 
   Future<void> _onLoadError(
@@ -322,24 +357,57 @@ class _CfWebViewState extends State<CfWebView> {
     }
   }
 
-  void _scheduleCheck() {
+  void _scheduleCheck(int attemptId) {
+    if (!_isCurrentAttempt(attemptId) || _completed) return;
     _checkTimer?.cancel();
-    _checkTimer = Timer(const Duration(milliseconds: 1000), _checkClearance);
+    _checkTimer = Timer(
+      const Duration(milliseconds: 1000),
+      () => _checkClearance(attemptId, countStall: true),
+    );
   }
 
-  Future<void> _checkClearance() async {
-    if (_disposed || _completed || _successValidationInProgress) return;
+  void _startPolling(int attemptId) {
+    if (!_isCurrentAttempt(attemptId) || _completed || _pollTimer != null) {
+      return;
+    }
+    _pollTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!_isCurrentAttempt(attemptId) || _completed) {
+        timer.cancel();
+        if (identical(_pollTimer, timer)) _pollTimer = null;
+        return;
+      }
+      _checkClearance(attemptId, countStall: false);
+    });
+  }
 
+  Future<void> _checkClearance(
+    int attemptId, {
+    required bool countStall,
+  }) async {
+    if (!_isCurrentAttempt(attemptId) ||
+        _completed ||
+        _clearanceCheckInProgress ||
+        _successValidationInProgress) {
+      return;
+    }
+
+    _clearanceCheckInProgress = true;
     final fingerprint = await _getBypassFingerprint();
+    if (!_isCurrentAttempt(attemptId) || _completed) {
+      _clearanceCheckInProgress = false;
+      return;
+    }
     _log.fine(
         '🔍 check  fingerprint=${fingerprint ?? '(none)'}  old=${_oldBypassFingerprint ?? '(none)'}  loop=$_loopCounter');
 
     if (fingerprint != null && fingerprint != _oldBypassFingerprint) {
       try {
         await _captureUserAgent();
+        if (!_isCurrentAttempt(attemptId) || _completed) return;
         final userAgent = _resolvedUserAgent ?? widget.userAgent;
         if (userAgent == null || userAgent.isEmpty) {
           _fail(
+            attemptId,
             'Could not read WebView user-agent',
             CfBypassFailedException(
               url: widget.url,
@@ -349,6 +417,7 @@ class _CfWebViewState extends State<CfWebView> {
           return;
         }
         final cookies = await _exportCookies();
+        if (!_isCurrentAttempt(attemptId) || _completed) return;
         final elapsed = DateTime.now().difference(_startedAt);
         final result = CfBypassResult.success(
           url: widget.url,
@@ -360,9 +429,10 @@ class _CfWebViewState extends State<CfWebView> {
         );
         _log.info(
             '✅ bypass candidate  cookies=${cookies.length}  duration=${elapsed.inMilliseconds}ms  ua=$userAgent');
-        await _validateSuccess(result);
+        await _validateSuccess(result, attemptId);
       } catch (e) {
         _fail(
+          attemptId,
           'Could not capture bypass result: $e',
           CfBypassFailedException(
             url: widget.url,
@@ -371,7 +441,7 @@ class _CfWebViewState extends State<CfWebView> {
           ),
         );
       }
-    } else {
+    } else if (countStall) {
       _loopCounter++;
       _log.fine(
           '⏳ stall  loop=$_loopCounter / stallThreshold=${widget.stallThreshold}');
@@ -381,26 +451,25 @@ class _CfWebViewState extends State<CfWebView> {
         widget.onLoopDetected?.call();
       }
     }
+    if (_isCurrentAttempt(attemptId) && !_completed) {
+      _clearanceCheckInProgress = false;
+    }
   }
 
   Future<void> _retry() async {
     if (_disposed) return;
+    final attemptId = _beginAttempt();
     _log.info('🔄 retry  clearing loop state');
-    _startedAt = DateTime.now();
-    _loopCounter = 0;
-    _completed = false;
-    _successValidationInProgress = false;
-    _loopDetectedFired = false;
-    _checkTimer?.cancel();
-    _timeoutTimer?.cancel();
-    _timeoutTimer = Timer(widget.timeout, _onTimeout);
     if (widget.clearAllDataOnInit) {
       await _clearAllData();
     } else if (widget.clearCfCookiesOnInit) {
       await _clearCfCookies();
     }
     await _initWebViewCookies();
+    if (!_isCurrentAttempt(attemptId)) return;
     _oldBypassFingerprint = await _getBypassFingerprint();
+    if (!_isCurrentAttempt(attemptId)) return;
+    _startPolling(attemptId);
     await _webController?.loadUrl(
       urlRequest: URLRequest(url: WebUri(widget.url)),
     );
@@ -410,8 +479,7 @@ class _CfWebViewState extends State<CfWebView> {
     if (_disposed || _completed) return;
     _completed = true;
     _log.info('✖ cancelled');
-    _checkTimer?.cancel();
-    _timeoutTimer?.cancel();
+    _stopAttemptTimers();
     widget.onCancelled?.call();
   }
 
@@ -449,8 +517,9 @@ class _CfWebViewState extends State<CfWebView> {
     try {
       final webUri = WebUri(widget.url);
       final cookies = await _cookieManager.getCookies(url: webUri);
-      final cfCookies =
-          cookies.where((c) => CfCookieHelper.isBypassCookie(c.name)).toList();
+      final cfCookies = cookies
+          .where((c) => CfCookieHelper.isManagedProtectionCookie(c.name))
+          .toList();
       _log.fine('🍪 clearing ${cfCookies.length} CF cookie(s)');
       for (final cookie in cfCookies) {
         await _cookieManager.deleteCookie(
@@ -513,18 +582,17 @@ class _CfWebViewState extends State<CfWebView> {
         .toList();
   }
 
-  Future<void> _validateSuccess(CfBypassResult result) async {
-    if (_disposed || _completed) return;
+  Future<void> _validateSuccess(CfBypassResult result, int attemptId) async {
+    if (!_isCurrentAttempt(attemptId) || _completed) return;
 
     _successValidationInProgress = true;
     try {
       final accepted = await widget.onSuccess(result);
-      if (_disposed || _completed) return;
+      if (!_isCurrentAttempt(attemptId) || _completed) return;
 
       if (accepted) {
         _completed = true;
-        _checkTimer?.cancel();
-        _timeoutTimer?.cancel();
+        _stopAttemptTimers();
         _log.info('✅ bypass accepted by success validator');
         return;
       }
@@ -533,6 +601,7 @@ class _CfWebViewState extends State<CfWebView> {
       await _retry();
     } catch (e) {
       _fail(
+        attemptId,
         'Success validation failed: $e',
         CfBypassFailedException(
           url: widget.url,
@@ -541,17 +610,16 @@ class _CfWebViewState extends State<CfWebView> {
         ),
       );
     } finally {
-      if (!_disposed && !_completed) {
+      if (_isCurrentAttempt(attemptId) && !_completed) {
         _successValidationInProgress = false;
       }
     }
   }
 
-  void _fail(String error, CfException exception) {
-    if (_disposed || _completed) return;
+  void _fail(int attemptId, String error, CfException exception) {
+    if (!_isCurrentAttempt(attemptId) || _completed) return;
     _completed = true;
-    _checkTimer?.cancel();
-    _timeoutTimer?.cancel();
+    _stopAttemptTimers();
     _log.warning('⚠ bypass failed: $error');
     widget.onFailure?.call(
       CfBypassResult.failure(
@@ -573,7 +641,10 @@ class _CfWebViewState extends State<CfWebView> {
     return InAppWebView(
       initialUrlRequest: URLRequest(url: WebUri(widget.url)),
       initialSettings: _settings,
-      onWebViewCreated: (controller) => _webController = controller,
+      onWebViewCreated: (controller) {
+        _webController = controller;
+        _startPolling(_attemptId);
+      },
       onLoadStart: (controller, url) => _onPageStartedLoading(url),
       onLoadStop: (controller, url) => _onPageFinishedLoading(url),
       onReceivedError: (controller, request, error) =>
