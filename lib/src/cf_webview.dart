@@ -16,13 +16,28 @@ import 'cf_cookie_helper.dart';
 /// times out, is cancelled, or is retried manually.
 typedef CfWebViewErrorCallback = FutureOr<bool> Function(Object error);
 
+/// The outcome of validating a candidate bypass result.
+enum CfWebViewSuccessDecision {
+  /// The candidate is valid and the bypass is complete.
+  accept,
+
+  /// The candidate is invalid, but the WebView should clear its state and try
+  /// the challenge again.
+  retry,
+
+  /// The candidate is invalid and the caller has handled the terminal failure.
+  reject,
+}
+
 /// Validates a candidate bypass result before [CfWebView] reports completion.
 ///
-/// Return `true` once your app has verified the captured cookies and user-agent
-/// can access the protected resource. Return `false` to make [CfWebView] clear
-/// configured cookies and retry the challenge. Throwing from the callback
-/// reports a failed bypass through [CfWebView.onFailure].
-typedef CfWebViewSuccessCallback = FutureOr<bool> Function(
+/// Return [CfWebViewSuccessDecision.accept] once your app has verified the
+/// captured cookies and user-agent can access the protected resource. Return
+/// [CfWebViewSuccessDecision.retry] to clear configured cookies and retry the
+/// challenge. Return [CfWebViewSuccessDecision.reject] when validation has
+/// failed terminally and the caller has handled that failure. Throwing from the
+/// callback reports a failed bypass through [CfWebView.onFailure].
+typedef CfWebViewSuccessCallback = FutureOr<CfWebViewSuccessDecision> Function(
   CfBypassResult result,
 );
 
@@ -62,9 +77,9 @@ class CfBypassController {
 /// polling, stall detection, and timeout automatically.
 ///
 /// When bypass-looking cookies are captured, [onSuccess] is called with a
-/// [CfBypassResult] containing the cookies and user-agent. Return `true` after
-/// verifying those artifacts can replay the protected request, or `false` to
-/// retry.
+/// [CfBypassResult] containing the cookies and user-agent. Return an explicit
+/// [CfWebViewSuccessDecision] after verifying whether those artifacts can
+/// replay the protected request.
 ///
 /// ```dart
 /// Navigator.push(
@@ -74,9 +89,9 @@ class CfBypassController {
 ///       url: 'https://example.com/protected',
 ///       onSuccess: (result) async {
 ///         final verified = await replayOriginalRequest(result);
-///         if (!verified) return false;
+///         if (!verified) return CfWebViewSuccessDecision.retry;
 ///         Navigator.pop(context, result);
-///         return true;
+///         return CfWebViewSuccessDecision.accept;
 ///       },
 ///     ),
 ///   ),
@@ -126,9 +141,12 @@ class CfWebView extends StatefulWidget {
 
   /// Required validator called once bypass-looking cookies are captured.
   ///
-  /// Return `true` only after validating the result against your protected
-  /// resource. Return `false` to retry the bypass. Throwing from this callback
-  /// reports a failed bypass through [onFailure].
+  /// Return [CfWebViewSuccessDecision.accept] only after validating the result
+  /// against your protected resource. Return
+  /// [CfWebViewSuccessDecision.retry] to retry the bypass, or
+  /// [CfWebViewSuccessDecision.reject] when the caller has handled a terminal
+  /// validation failure. Throwing from this callback reports a failed bypass
+  /// through [onFailure].
   final CfWebViewSuccessCallback onSuccess;
 
   /// Called when the bypass cannot be completed (timeout, error).
@@ -188,11 +206,14 @@ class _CfWebViewState extends State<CfWebView> {
   static final _log = Logger('CfWebView');
 
   final CookieManager _cookieManager = CookieManager.instance();
+  final Set<String> _rejectedBypassFingerprints = {};
+  final Set<String> _visitedUrls = {};
 
   InAppWebViewController? _webController;
   String? _oldBypassFingerprint;
   String? _lastStartedUrl;
   String? _lastFinishedUrl;
+  String? _lastNavigatedUrl;
   String? _resolvedUserAgent;
   int _loopCounter = 0;
   bool _loopDetectedFired = false;
@@ -213,6 +234,7 @@ class _CfWebViewState extends State<CfWebView> {
   void initState() {
     super.initState();
     _startedAt = DateTime.now();
+    _recordNavigation(WebUri(widget.url));
     widget.controller?._attach(this);
     _initialize();
   }
@@ -254,7 +276,7 @@ class _CfWebViewState extends State<CfWebView> {
     // deletion misses a scoped cookie, do not treat it as a fresh solve.
     _oldBypassFingerprint = await _getBypassFingerprint();
     if (!_isCurrentAttempt(attemptId)) return;
-    _log.fine('🔎 seed fingerprint=${_oldBypassFingerprint ?? '(none)'}');
+    _log.fine('🔎 seed bypass cookie present=${_oldBypassFingerprint != null}');
 
     _resolvedUserAgent = null;
     _startPolling(attemptId);
@@ -299,7 +321,7 @@ class _CfWebViewState extends State<CfWebView> {
       CfBypassResult.timeout(
         url: widget.url,
         timeout: widget.timeout,
-        finalUrl: _lastStartedUrl,
+        finalUrl: _resolvedFinalUrl,
         exception: CfTimeoutException(url: widget.url, timeout: widget.timeout),
         attempts: _loopCounter + 1,
       ),
@@ -319,6 +341,7 @@ class _CfWebViewState extends State<CfWebView> {
   void _onPageStartedLoading(WebUri? url) {
     _log.fine('→ loading  ${url ?? '(null)'}');
     _lastStartedUrl = url?.toString();
+    _recordNavigation(url);
     _startPolling(_attemptId);
     widget.onPageStartedLoading?.call(url?.toString());
   }
@@ -326,6 +349,7 @@ class _CfWebViewState extends State<CfWebView> {
   void _onPageFinishedLoading(WebUri? url) {
     _log.fine('✓ finished  ${url ?? '(null)'}');
     _lastFinishedUrl = url?.toString();
+    _recordNavigation(url);
     widget.onPageFinishedLoading?.call(url?.toString());
     _scheduleCheck(_attemptId);
   }
@@ -399,16 +423,20 @@ class _CfWebViewState extends State<CfWebView> {
       _clearanceCheckInProgress = false;
       return;
     }
-    _log.fine(
-        '🔍 check  fingerprint=${fingerprint ?? '(none)'}  old=${_oldBypassFingerprint ?? '(none)'}  loop=$_loopCounter');
+    _log.fine('🔍 check  bypassCookiePresent=${fingerprint != null}  '
+        'bypassCookieChanged=${fingerprint != null && fingerprint != _oldBypassFingerprint}  '
+        'loop=$_loopCounter');
 
     final isChangedFingerprint =
         fingerprint != null && fingerprint != _oldBypassFingerprint;
     final shouldValidateSeedFingerprint = fingerprint != null &&
         fingerprint == _oldBypassFingerprint &&
         !_seedFingerprintValidated;
+    final shouldValidateFingerprint =
+        (isChangedFingerprint || shouldValidateSeedFingerprint) &&
+            !_rejectedBypassFingerprints.contains(fingerprint);
 
-    if (isChangedFingerprint || shouldValidateSeedFingerprint) {
+    if (shouldValidateFingerprint) {
       if (shouldValidateSeedFingerprint) _seedFingerprintValidated = true;
       try {
         await _captureUserAgent();
@@ -430,7 +458,7 @@ class _CfWebViewState extends State<CfWebView> {
         final elapsed = DateTime.now().difference(_startedAt);
         final result = CfBypassResult.success(
           url: widget.url,
-          finalUrl: _lastFinishedUrl,
+          finalUrl: _resolvedFinalUrl,
           userAgent: userAgent,
           cookies: cookies,
           duration: elapsed,
@@ -439,7 +467,8 @@ class _CfWebViewState extends State<CfWebView> {
         final candidateKind =
             isChangedFingerprint ? 'changed fingerprint' : 'seed fingerprint';
         _log.info(
-            '✅ bypass candidate ($candidateKind)  cookies=${cookies.length}  duration=${elapsed.inMilliseconds}ms  ua=$userAgent');
+            '✅ bypass candidate ($candidateKind)  cookies=${cookies.length}  '
+            'duration=${elapsed.inMilliseconds}ms  hasUserAgent=${userAgent.isNotEmpty}');
         await _validateSuccess(result, attemptId);
       } catch (e) {
         _fail(
@@ -452,19 +481,43 @@ class _CfWebViewState extends State<CfWebView> {
           ),
         );
       }
+    } else if (fingerprint != null &&
+        _rejectedBypassFingerprints.contains(fingerprint)) {
+      _log.fine('🚫 rejected bypass fingerprint ignored');
+      if (countStall) _countRejectedFingerprintStall(attemptId);
     } else if (countStall) {
-      _loopCounter++;
-      _log.fine(
-          '⏳ stall  loop=$_loopCounter / stallThreshold=${widget.stallThreshold}');
-      if (_loopCounter >= widget.stallThreshold && !_loopDetectedFired) {
-        _loopDetectedFired = true;
-        _log.warning('🔁 loop detected — firing onLoopDetected');
-        widget.onLoopDetected?.call();
-      }
+      _countStall();
     }
     if (_isCurrentAttempt(attemptId) && !_completed) {
       _clearanceCheckInProgress = false;
     }
+  }
+
+  void _countStall() {
+    _loopCounter++;
+    _log.fine(
+        '⏳ stall  loop=$_loopCounter / stallThreshold=${widget.stallThreshold}');
+    if (_loopCounter >= widget.stallThreshold && !_loopDetectedFired) {
+      _loopDetectedFired = true;
+      _log.warning('🔁 loop detected — firing onLoopDetected');
+      widget.onLoopDetected?.call();
+    }
+  }
+
+  void _countRejectedFingerprintStall(int attemptId) {
+    _loopCounter++;
+    _log.fine(
+        '⏳ rejected fingerprint stall  loop=$_loopCounter / stallThreshold=${widget.stallThreshold}');
+    if (_loopCounter < widget.stallThreshold || _loopDetectedFired) return;
+    _loopDetectedFired = true;
+    _fail(
+      attemptId,
+      'Bypass fingerprint was rejected by validation and did not change.',
+      CfBypassFailedException(
+        url: widget.url,
+        message: 'Rejected bypass fingerprint did not change',
+      ),
+    );
   }
 
   Future<void> _retry() async {
@@ -496,12 +549,7 @@ class _CfWebViewState extends State<CfWebView> {
 
   Future<String?> _getBypassFingerprint() async {
     try {
-      final cookies = await _cookieManager.getCookies(url: WebUri(widget.url));
-      final cfCookies = cookies
-          .map((c) => CfBrowserCookie(
-              name: c.name, value: c.value, domain: c.domain ?? ''))
-          .toList();
-      return CfCookieHelper.getBypassFingerprint(cfCookies);
+      return CfCookieHelper.getBypassFingerprint(await _readSessionCookies());
     } catch (e) {
       _log.warning('⚠ error reading bypass fingerprint', e);
       return null;
@@ -526,20 +574,22 @@ class _CfWebViewState extends State<CfWebView> {
 
   Future<void> _clearCfCookies() async {
     try {
-      final webUri = WebUri(widget.url);
-      final cookies = await _cookieManager.getCookies(url: webUri);
-      final cfCookies = cookies
-          .where((c) => CfCookieHelper.isManagedProtectionCookie(c.name))
-          .toList();
-      _log.fine('🍪 clearing ${cfCookies.length} CF cookie(s)');
-      for (final cookie in cfCookies) {
-        await _cookieManager.deleteCookie(
-          url: webUri,
-          name: cookie.name,
-          domain: cookie.domain,
-          path: cookie.path ?? '/',
-        );
+      var clearedCount = 0;
+      for (final webUri in _cookieUrls) {
+        final cookies = await _cookieManager.getCookies(url: webUri);
+        for (final cookie in cookies.where(
+          (cookie) => CfCookieHelper.isManagedProtectionCookie(cookie.name),
+        )) {
+          await _cookieManager.deleteCookie(
+            url: webUri,
+            name: cookie.name,
+            domain: cookie.domain,
+            path: cookie.path ?? '/',
+          );
+          clearedCount++;
+        }
       }
+      _log.fine('🍪 clearing $clearedCount CF cookie(s)');
     } catch (e) {
       _log.warning('⚠ error clearing CF cookies', e);
     }
@@ -572,25 +622,57 @@ class _CfWebViewState extends State<CfWebView> {
       } else if (value != null) {
         _resolvedUserAgent = value.toString();
       }
-      _log.fine('🌐 user-agent=${_resolvedUserAgent ?? '(none)'}');
+      _log.fine(
+          '🌐 user-agent captured=${_resolvedUserAgent?.isNotEmpty == true}');
     } catch (e) {
       _log.warning('⚠ error reading user-agent', e);
     }
   }
 
   Future<List<CfBrowserCookie>> _exportCookies() async {
-    final uri = Uri.parse(widget.url);
-    final webCookies = await _cookieManager.getCookies(url: WebUri(widget.url));
-    return webCookies
-        .map((wc) => CfBrowserCookie(
-              name: wc.name,
-              value: wc.value,
-              domain: wc.domain ?? uri.host,
-              path: wc.path ?? '/',
-              isSecure: wc.isSecure,
-              isHttpOnly: wc.isHttpOnly,
-            ))
-        .toList();
+    return _readSessionCookies();
+  }
+
+  String get _resolvedFinalUrl =>
+      _lastNavigatedUrl ?? _lastFinishedUrl ?? _lastStartedUrl ?? widget.url;
+
+  Iterable<WebUri> get _cookieUrls sync* {
+    final finalUrl = _lastNavigatedUrl;
+    if (finalUrl != null) yield WebUri(finalUrl);
+    for (final url in _visitedUrls) {
+      if (url != finalUrl) yield WebUri(url);
+    }
+  }
+
+  void _recordNavigation(WebUri? url) {
+    if (url == null) return;
+    final uri = Uri.tryParse(url.toString());
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) return;
+    final normalized = uri.replace(fragment: '').toString();
+    _visitedUrls.add(normalized);
+    _lastNavigatedUrl = normalized;
+  }
+
+  Future<List<CfBrowserCookie>> _readSessionCookies() async {
+    final cookiesByScope = <String, CfBrowserCookie>{};
+    for (final webUri in _cookieUrls) {
+      final fallbackHost = Uri.parse(webUri.toString()).host;
+      final cookies = await _cookieManager.getCookies(url: webUri);
+      for (final cookie in cookies) {
+        final browserCookie = CfBrowserCookie(
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain ?? fallbackHost,
+          path: cookie.path ?? '/',
+          isSecure: cookie.isSecure,
+          isHttpOnly: cookie.isHttpOnly,
+        );
+        final scope =
+            '${browserCookie.name}\u0000${browserCookie.domain}\u0000${browserCookie.path}';
+        cookiesByScope.putIfAbsent(scope, () => browserCookie);
+      }
+    }
+    return cookiesByScope.values.toList(growable: false);
   }
 
   Future<void> _validateSuccess(CfBypassResult result, int attemptId) async {
@@ -598,18 +680,30 @@ class _CfWebViewState extends State<CfWebView> {
 
     _successValidationInProgress = true;
     try {
-      final accepted = await widget.onSuccess(result);
+      final decision = await widget.onSuccess(result);
       if (!_isCurrentAttempt(attemptId) || _completed) return;
 
-      if (accepted) {
-        _completed = true;
-        _stopAttemptTimers();
-        _log.info('✅ bypass accepted by success validator');
-        return;
+      switch (decision) {
+        case CfWebViewSuccessDecision.accept:
+          _completed = true;
+          _stopAttemptTimers();
+          _log.info('✅ bypass accepted by success validator');
+          return;
+        case CfWebViewSuccessDecision.reject:
+          _completed = true;
+          _stopAttemptTimers();
+          _log.warning('⚠ bypass rejected by success validator');
+          return;
+        case CfWebViewSuccessDecision.retry:
+          _log.info('🔄 bypass candidate rejected by success validator');
+          final fingerprint = CfCookieHelper.getBypassFingerprint(
+            result.cookies,
+          );
+          if (fingerprint != null) {
+            _rejectedBypassFingerprints.add(fingerprint);
+          }
+          await _retry();
       }
-
-      _log.info('🔄 bypass candidate rejected by success validator');
-      await _retry();
     } catch (e) {
       _fail(
         attemptId,
@@ -635,7 +729,7 @@ class _CfWebViewState extends State<CfWebView> {
     widget.onFailure?.call(
       CfBypassResult.failure(
         url: widget.url,
-        finalUrl: _lastFinishedUrl ?? _lastStartedUrl,
+        finalUrl: _resolvedFinalUrl,
         error: error,
         exception: exception,
         userAgent: _resolvedUserAgent ?? widget.userAgent,

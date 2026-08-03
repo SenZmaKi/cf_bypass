@@ -56,7 +56,7 @@ class _BypassPageState extends State<BypassPage> {
 
   // ── CfWebView callbacks ──────────────────────────────────────────────────
 
-  Future<bool> _onSuccess(CfBypassResult result) async {
+  Future<CfWebViewSuccessDecision> _onSuccess(CfBypassResult result) async {
     final valid = await _validateBypassResult(result);
     if (!valid) {
       _log(
@@ -70,7 +70,7 @@ class _BypassPageState extends State<BypassPage> {
           _loopDetected = false;
         });
       }
-      return false;
+      return CfWebViewSuccessDecision.retry;
     }
 
     _log(
@@ -79,7 +79,7 @@ class _BypassPageState extends State<BypassPage> {
       icon: Icons.check_circle_rounded,
       color: _green,
     );
-    if (!mounted) return true;
+    if (!mounted) return CfWebViewSuccessDecision.accept;
     setState(() {
       _state = _BypassState.success;
       _result = result;
@@ -87,7 +87,7 @@ class _BypassPageState extends State<BypassPage> {
     Future.delayed(const Duration(milliseconds: 800), () {
       if (mounted) Navigator.pop(context, result);
     });
-    return true;
+    return CfWebViewSuccessDecision.accept;
   }
 
   Future<bool> _validateBypassResult(CfBypassResult result) async {

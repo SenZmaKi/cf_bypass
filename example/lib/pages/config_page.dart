@@ -7,21 +7,22 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  final _formKey       = GlobalKey<FormState>();
-  final _urlCtrl       = TextEditingController(text: 'https://nowsecure.nl');
-  final _uaCtrl        = TextEditingController();
-  final _timeoutCtrl   = TextEditingController(text: '120');
-  int  _stallThreshold = 3;
-  bool _clearAllData   = false;
+  final _formKey = GlobalKey<FormState>();
+  final _urlCtrl = TextEditingController(text: 'https://nowsecure.nl');
+  final _uaCtrl = TextEditingController();
+  final _timeoutCtrl = TextEditingController(text: '120');
+  int _stallThreshold = 3;
+  bool _clearAllData = false;
   bool _clearCfCookies = true;
-  final List<_CookiePair>    _cookies = [];
+  final List<_CookiePair> _cookies = [];
   final List<CfBypassResult> _history = [];
 
-  bool            _isProbing       = false;
-  _ProbeResult?   _lastProbeResult;
+  bool _isProbing = false;
+  _ProbeResult? _lastProbeResult;
   CfBypassResult? _probeSession;
 
   @override
@@ -42,7 +43,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   String? _validateUrl(String? v) {
     if (v == null || v.trim().isEmpty) return 'Required';
     final uri = Uri.tryParse(v.trim());
-    if (uri == null || !uri.hasScheme || !uri.hasAuthority) return 'Must be a full URL';
+    if (uri == null || !uri.hasScheme || !uri.hasAuthority)
+      return 'Must be a full URL';
     if (!uri.scheme.startsWith('http')) return 'Must start with http(s)://';
     return null;
   }
@@ -50,7 +52,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   String? _validateTimeout(String? v) {
     final n = int.tryParse(v ?? '');
     if (n == null) return 'Must be a number';
-    if (n < 10)  return 'Min 10s';
+    if (n < 10) return 'Min 10s';
     if (n > 600) return 'Max 600s';
     return null;
   }
@@ -69,7 +71,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   void _startBypass() {
     // Validate without form since we may be calling from another tab
-    final urlErr     = _validateUrl(_urlCtrl.text.trim());
+    final urlErr = _validateUrl(_urlCtrl.text.trim());
     final timeoutErr = _validateTimeout(_timeoutCtrl.text.trim());
     if (urlErr != null || timeoutErr != null) {
       _tabController.animateTo(0);
@@ -81,11 +83,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       context,
       MaterialPageRoute(
         builder: (_) => BypassPage(
-          url:            _urlCtrl.text.trim(),
-          userAgent:      _uaCtrl.text.trim().isEmpty ? null : _uaCtrl.text.trim(),
-          timeout:        timeout,
+          url: _urlCtrl.text.trim(),
+          userAgent: _uaCtrl.text.trim().isEmpty ? null : _uaCtrl.text.trim(),
+          timeout: timeout,
           stallThreshold: _stallThreshold,
-          clearAllData:   _clearAllData,
+          clearAllData: _clearAllData,
           clearCfCookies: _clearCfCookies,
           initialCookies: _buildCookies(),
         ),
@@ -107,7 +109,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final ua = _probeSession?.userAgent ??
         (_uaCtrl.text.trim().isEmpty ? null : _uaCtrl.text.trim());
 
-    setState(() { _isProbing = true; _lastProbeResult = null; });
+    setState(() {
+      _isProbing = true;
+      _lastProbeResult = null;
+    });
 
     final sw = Stopwatch()..start();
     try {
@@ -118,7 +123,8 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         responseType: ResponseType.plain,
         headers: {
           if (ua != null) 'user-agent': ua,
-          if (cookies.isNotEmpty) 'cookie': CfCookieHelper.cookiesToHeader(cookies),
+          if (cookies.isNotEmpty)
+            'cookie': CfCookieHelper.cookiesToHeader(cookies),
         },
       ));
 
@@ -130,41 +136,42 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         (name, values) => flatHeaders[name.toLowerCase()] = values.join(', '),
       );
 
-      final body     = response.data ?? '';
+      final body = response.data ?? '';
       final finalUrl = response.realUri.toString();
       final detection = CfDetector.detect(CfDetectionRequest(
-        url:        finalUrl,
+        url: finalUrl,
         statusCode: response.statusCode ?? 0,
-        body:       body,
-        headers:    flatHeaders,
+        body: body,
+        headers: flatHeaders,
       ));
 
       if (mounted) {
         setState(() {
           _isProbing = false;
           _lastProbeResult = _ProbeResult(
-            url:         url,
-            finalUrl:    finalUrl == url ? null : finalUrl,
-            statusCode:  response.statusCode,
-            detection:   detection,
-            duration:    sw.elapsed,
+            url: url,
+            finalUrl: finalUrl == url ? null : finalUrl,
+            statusCode: response.statusCode,
+            detection: detection,
+            duration: sw.elapsed,
             cookiesUsed: cookies,
-            uaUsed:      ua,
+            uaUsed: ua,
           );
         });
       }
     } catch (e) {
       sw.stop();
-      final msg = e is DioException ? (e.message ?? e.toString()) : e.toString();
+      final msg =
+          e is DioException ? (e.message ?? e.toString()) : e.toString();
       if (mounted) {
         setState(() {
           _isProbing = false;
           _lastProbeResult = _ProbeResult(
-            url:        url,
+            url: url,
             statusCode: null,
-            detection:  null,
-            duration:   sw.elapsed,
-            error:      msg,
+            detection: null,
+            duration: sw.elapsed,
+            error: msg,
           );
         });
       }
@@ -190,14 +197,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           unselectedLabelColor: _muted,
           dividerColor: _border,
           labelStyle: const TextStyle(
-            fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.4,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.4,
           ),
           unselectedLabelStyle: const TextStyle(
-            fontSize: 10, fontWeight: FontWeight.w500, letterSpacing: 1.4,
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 1.4,
           ),
           tabs: const [
             Tab(text: 'BYPASS', height: 36),
-            Tab(text: 'PROBE',  height: 36),
+            Tab(text: 'PROBE', height: 36),
             Tab(text: 'HISTORY', height: 36),
           ],
         ),
@@ -208,40 +219,41 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           controller: _tabController,
           children: [
             _BypassTab(
-              formKey:                 _formKey,
-              urlCtrl:                 _urlCtrl,
-              uaCtrl:                  _uaCtrl,
-              timeoutCtrl:             _timeoutCtrl,
-              stallThreshold:          _stallThreshold,
-              clearAllData:            _clearAllData,
-              clearCfCookies:          _clearCfCookies,
-              cookies:                 _cookies,
-              validateUrl:             _validateUrl,
-              validateTimeout:         _validateTimeout,
-              onStallChanged:          (v) => setState(() => _stallThreshold = v),
-              onClearAllDataChanged:   (v) => setState(() => _clearAllData = v),
-              onClearCfCookiesChanged: (v) => setState(() => _clearCfCookies = v),
-              onAddCookie:             () => setState(() => _cookies.add(_CookiePair())),
-              onDeleteCookie:          (i) => setState(() => _cookies.removeAt(i)),
-              onLaunch:                _startBypass,
+              formKey: _formKey,
+              urlCtrl: _urlCtrl,
+              uaCtrl: _uaCtrl,
+              timeoutCtrl: _timeoutCtrl,
+              stallThreshold: _stallThreshold,
+              clearAllData: _clearAllData,
+              clearCfCookies: _clearCfCookies,
+              cookies: _cookies,
+              validateUrl: _validateUrl,
+              validateTimeout: _validateTimeout,
+              onStallChanged: (v) => setState(() => _stallThreshold = v),
+              onClearAllDataChanged: (v) => setState(() => _clearAllData = v),
+              onClearCfCookiesChanged: (v) =>
+                  setState(() => _clearCfCookies = v),
+              onAddCookie: () => setState(() => _cookies.add(_CookiePair())),
+              onDeleteCookie: (i) => setState(() => _cookies.removeAt(i)),
+              onLaunch: _startBypass,
             ),
             _ProbeTab(
-              urlCtrl:        _urlCtrl,
-              probeSession:   _probeSession,
-              hasHistory:     _history.isNotEmpty,
-              isProbing:      _isProbing,
-              lastResult:     _lastProbeResult,
-              onPick:         () => _pushSessionPicker(context),
+              urlCtrl: _urlCtrl,
+              probeSession: _probeSession,
+              hasHistory: _history.isNotEmpty,
+              isProbing: _isProbing,
+              lastResult: _lastProbeResult,
+              onPick: () => _pushSessionPicker(context),
               onClearSession: _probeSession != null
                   ? () => setState(() => _probeSession = null)
                   : null,
-              onProbe:        _runProbe,
-              onShowResult:   (r) => _pushProbeSheet(context, r),
+              onProbe: _runProbe,
+              onShowResult: (r) => _pushProbeSheet(context, r),
             ),
             _HistoryTab(
-              history:  _history,
+              history: _history,
               onSelect: (r) => _pushResultSheet(context, r),
-              onClear:  () => setState(() {
+              onClear: () => setState(() {
                 _history.clear();
                 _probeSession = null;
               }),
@@ -288,7 +300,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         maxChildSize: 0.92,
         expand: false,
         builder: (_, sc) => _SessionPickerSheet(
-          history:        _history,
+          history: _history,
           selectedResult: _probeSession,
           onSelect: (r) {
             Navigator.pop(ctx);
@@ -296,7 +308,10 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           },
           onClear: () {
             Navigator.pop(ctx);
-            setState(() { _history.clear(); _probeSession = null; });
+            setState(() {
+              _history.clear();
+              _probeSession = null;
+            });
           },
           scrollController: sc,
         ),
@@ -319,10 +334,13 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         maxChildSize: 0.92,
         expand: false,
         builder: (_, sc) => _ProbeDetailSheet(
-          result:          probe,
+          result: probe,
           scrollController: sc,
-          onLaunchBypass:  probe.detection?.kind == CfProtectionKind.challenge
-              ? () { Navigator.pop(ctx); _startBypass(); }
+          onLaunchBypass: probe.detection?.kind == CfProtectionKind.challenge
+              ? () {
+                  Navigator.pop(ctx);
+                  _startBypass();
+                }
               : null,
         ),
       ),
@@ -342,12 +360,12 @@ class _BypassTab extends StatelessWidget {
   final List<_CookiePair> cookies;
   final FormFieldValidator<String> validateUrl;
   final FormFieldValidator<String> validateTimeout;
-  final ValueChanged<int>  onStallChanged;
+  final ValueChanged<int> onStallChanged;
   final ValueChanged<bool> onClearAllDataChanged;
   final ValueChanged<bool> onClearCfCookiesChanged;
-  final VoidCallback       onAddCookie;
-  final ValueChanged<int>  onDeleteCookie;
-  final VoidCallback       onLaunch;
+  final VoidCallback onAddCookie;
+  final ValueChanged<int> onDeleteCookie;
+  final VoidCallback onLaunch;
 
   const _BypassTab({
     required this.formKey,
@@ -382,7 +400,9 @@ class _BypassTab extends StatelessWidget {
                 keyboardType: TextInputType.url,
                 autocorrect: false,
                 style: const TextStyle(
-                  fontFamily: 'monospace', color: _text, fontSize: 13,
+                  fontFamily: 'monospace',
+                  color: _text,
+                  fontSize: 13,
                 ),
                 decoration: const InputDecoration(
                   labelText: 'Target URL',
@@ -395,18 +415,18 @@ class _BypassTab extends StatelessWidget {
 
               // Options section
               _OptionsPanel(
-                uaCtrl:                  uaCtrl,
-                timeoutCtrl:             timeoutCtrl,
-                stallThreshold:          stallThreshold,
-                clearAllData:            clearAllData,
-                clearCfCookies:          clearCfCookies,
-                cookies:                 cookies,
-                validateTimeout:         validateTimeout,
-                onStallChanged:          onStallChanged,
-                onClearAllDataChanged:   onClearAllDataChanged,
+                uaCtrl: uaCtrl,
+                timeoutCtrl: timeoutCtrl,
+                stallThreshold: stallThreshold,
+                clearAllData: clearAllData,
+                clearCfCookies: clearCfCookies,
+                cookies: cookies,
+                validateTimeout: validateTimeout,
+                onStallChanged: onStallChanged,
+                onClearAllDataChanged: onClearAllDataChanged,
                 onClearCfCookiesChanged: onClearCfCookiesChanged,
-                onAddCookie:             onAddCookie,
-                onDeleteCookie:          onDeleteCookie,
+                onAddCookie: onAddCookie,
+                onDeleteCookie: onDeleteCookie,
               ),
             ],
           ),
@@ -415,7 +435,10 @@ class _BypassTab extends StatelessWidget {
         // Sticky launch bar
         Container(
           padding: EdgeInsets.fromLTRB(
-            16, 10, 16, MediaQuery.paddingOf(context).bottom + 14,
+            16,
+            10,
+            16,
+            MediaQuery.paddingOf(context).bottom + 14,
           ),
           decoration: const BoxDecoration(
             color: _bg,
@@ -437,11 +460,11 @@ class _OptionsPanel extends StatelessWidget {
   final bool clearCfCookies;
   final List<_CookiePair> cookies;
   final FormFieldValidator<String> validateTimeout;
-  final ValueChanged<int>  onStallChanged;
+  final ValueChanged<int> onStallChanged;
   final ValueChanged<bool> onClearAllDataChanged;
   final ValueChanged<bool> onClearCfCookiesChanged;
-  final VoidCallback       onAddCookie;
-  final ValueChanged<int>  onDeleteCookie;
+  final VoidCallback onAddCookie;
+  final ValueChanged<int> onDeleteCookie;
 
   const _OptionsPanel({
     required this.uaCtrl,
@@ -473,8 +496,10 @@ class _OptionsPanel extends StatelessWidget {
               Text(
                 'OPTIONS',
                 style: TextStyle(
-                  color: _muted, fontSize: 10,
-                  fontWeight: FontWeight.w700, letterSpacing: 1.5,
+                  color: _muted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
                 ),
               ),
               SizedBox(width: 8),
@@ -488,7 +513,9 @@ class _OptionsPanel extends StatelessWidget {
           controller: uaCtrl,
           autocorrect: false,
           style: const TextStyle(
-            fontFamily: 'monospace', color: _text, fontSize: 12,
+            fontFamily: 'monospace',
+            color: _text,
+            fontSize: 12,
           ),
           decoration: const InputDecoration(
             labelText: 'User-Agent (leave blank for WebView default)',
@@ -508,11 +535,14 @@ class _OptionsPanel extends StatelessWidget {
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 autovalidateMode: AutovalidateMode.onUserInteraction,
                 style: const TextStyle(
-                  fontFamily: 'monospace', color: _text, fontSize: 13,
+                  fontFamily: 'monospace',
+                  color: _text,
+                  fontSize: 13,
                 ),
                 decoration: const InputDecoration(
                   labelText: 'Timeout (seconds)',
-                  prefixIcon: Icon(Icons.timer_rounded, size: 16, color: _muted),
+                  prefixIcon:
+                      Icon(Icons.timer_rounded, size: 16, color: _muted),
                 ),
                 validator: validateTimeout,
               ),
@@ -533,16 +563,17 @@ class _OptionsPanel extends StatelessWidget {
 
         // Toggles
         _ToggleRow(
-          label:    'Clear CF cookies on init',
+          label: 'Clear CF cookies on init',
           sublabel: 'Removes stale cf_clearance and __ddg* before each run.',
-          value:    clearCfCookies,
+          value: clearCfCookies,
           onChanged: onClearCfCookiesChanged,
         ),
         const SizedBox(height: 8),
         _ToggleRow(
-          label:    'Clear all browser data on init',
-          sublabel: 'Wipes all cookies and cache to force a fresh CF challenge.',
-          value:    clearAllData,
+          label: 'Clear all browser data on init',
+          sublabel:
+              'Wipes all cookies and cache to force a fresh CF challenge.',
+          value: clearAllData,
           onChanged: onClearAllDataChanged,
         ),
         const SizedBox(height: 14),
@@ -553,8 +584,10 @@ class _OptionsPanel extends StatelessWidget {
             const Text(
               'INITIAL COOKIES',
               style: TextStyle(
-                color: _muted, fontSize: 10,
-                fontWeight: FontWeight.w700, letterSpacing: 1.5,
+                color: _muted,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.5,
               ),
             ),
             const SizedBox(width: 8),
@@ -576,11 +609,11 @@ class _OptionsPanel extends StatelessWidget {
           )
         else
           ...cookies.asMap().entries.map(
-            (e) => _CookieRow(
-              pair:     e.value,
-              onDelete: () => onDeleteCookie(e.key),
-            ),
-          ),
+                (e) => _CookieRow(
+                  pair: e.value,
+                  onDelete: () => onDeleteCookie(e.key),
+                ),
+              ),
       ],
     );
   }
@@ -590,12 +623,12 @@ class _OptionsPanel extends StatelessWidget {
 class _ProbeTab extends StatelessWidget {
   final TextEditingController urlCtrl;
   final CfBypassResult? probeSession;
-  final bool            hasHistory;
-  final bool            isProbing;
-  final _ProbeResult?   lastResult;
-  final VoidCallback    onPick;
-  final VoidCallback?   onClearSession;
-  final VoidCallback    onProbe;
+  final bool hasHistory;
+  final bool isProbing;
+  final _ProbeResult? lastResult;
+  final VoidCallback onPick;
+  final VoidCallback? onClearSession;
+  final VoidCallback onProbe;
   final ValueChanged<_ProbeResult> onShowResult;
 
   const _ProbeTab({
@@ -633,7 +666,9 @@ class _ProbeTab extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      url.isEmpty ? 'No URL set — enter one in the Bypass tab' : url,
+                      url.isEmpty
+                          ? 'No URL set — enter one in the Bypass tab'
+                          : url,
                       style: TextStyle(
                         color: url.isEmpty ? _muted : _dim,
                         fontSize: 12,
@@ -650,10 +685,10 @@ class _ProbeTab extends StatelessWidget {
         const SizedBox(height: 12),
 
         _SessionPicker(
-          selected:   probeSession,
+          selected: probeSession,
           hasHistory: hasHistory,
-          onPick:     onPick,
-          onClear:    onClearSession,
+          onPick: onPick,
+          onClear: onClearSession,
         ),
         const SizedBox(height: 10),
 
@@ -673,9 +708,9 @@ class _ProbeTab extends StatelessWidget {
 
 // ── History Tab ───────────────────────────────────────────────────────────────
 class _HistoryTab extends StatelessWidget {
-  final List<CfBypassResult>      history;
+  final List<CfBypassResult> history;
   final ValueChanged<CfBypassResult> onSelect;
-  final VoidCallback              onClear;
+  final VoidCallback onClear;
 
   const _HistoryTab({
     required this.history,
@@ -695,7 +730,9 @@ class _HistoryTab extends StatelessWidget {
             Text(
               'No runs yet',
               style: TextStyle(
-                color: _dim, fontSize: 14, fontWeight: FontWeight.w600,
+                color: _dim,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
               ),
             ),
             SizedBox(height: 4),
@@ -717,7 +754,9 @@ class _HistoryTab extends StatelessWidget {
               Text(
                 '${history.length} run${history.length == 1 ? '' : 's'}',
                 style: const TextStyle(
-                  color: _muted, fontSize: 11, fontWeight: FontWeight.w600,
+                  color: _muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const Spacer(),
@@ -733,7 +772,7 @@ class _HistoryTab extends StatelessWidget {
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (_, i) => _ResultSummaryCard(
               result: history[i],
-              onTap:  () => onSelect(history[i]),
+              onTap: () => onSelect(history[i]),
             ),
           ),
         ),
@@ -744,11 +783,11 @@ class _HistoryTab extends StatelessWidget {
 
 // ── Session Picker Sheet ──────────────────────────────────────────────────────
 class _SessionPickerSheet extends StatelessWidget {
-  final List<CfBypassResult>      history;
+  final List<CfBypassResult> history;
   final void Function(CfBypassResult) onSelect;
-  final VoidCallback              onClear;
-  final ScrollController          scrollController;
-  final CfBypassResult?           selectedResult;
+  final VoidCallback onClear;
+  final ScrollController scrollController;
+  final CfBypassResult? selectedResult;
 
   const _SessionPickerSheet({
     required this.history,
@@ -764,10 +803,12 @@ class _SessionPickerSheet extends StatelessWidget {
       children: [
         Center(
           child: Container(
-            width: 36, height: 4,
+            width: 36,
+            height: 4,
             margin: const EdgeInsets.symmetric(vertical: 8),
             decoration: BoxDecoration(
-              color: _border, borderRadius: BorderRadius.circular(2),
+              color: _border,
+              borderRadius: BorderRadius.circular(2),
             ),
           ),
         ),
@@ -775,13 +816,16 @@ class _SessionPickerSheet extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: [
-              const Icon(Icons.check_circle_outline_rounded, size: 14, color: _amber),
+              const Icon(Icons.check_circle_outline_rounded,
+                  size: 14, color: _amber),
               const SizedBox(width: 8),
               Text(
                 'SELECT SESSION  •  ${history.length}',
                 style: const TextStyle(
-                  color: _amber, fontSize: 11,
-                  fontWeight: FontWeight.w700, letterSpacing: 1,
+                  color: _amber,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
                 ),
               ),
               const Spacer(),
@@ -790,7 +834,9 @@ class _SessionPickerSheet extends StatelessWidget {
                 child: const Text(
                   'CLEAR ALL',
                   style: TextStyle(
-                    color: _red, fontSize: 10, fontWeight: FontWeight.w700,
+                    color: _red,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
@@ -805,9 +851,9 @@ class _SessionPickerSheet extends StatelessWidget {
             itemCount: history.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (_, i) => _ResultSummaryCard(
-              result:   history[i],
+              result: history[i],
               selected: history[i] == selectedResult,
-              onTap:    () => onSelect(history[i]),
+              onTap: () => onSelect(history[i]),
             ),
           ),
         ),
@@ -819,8 +865,8 @@ class _SessionPickerSheet extends StatelessWidget {
 // ── Result Summary Card ───────────────────────────────────────────────────────
 class _ResultSummaryCard extends StatelessWidget {
   final CfBypassResult result;
-  final VoidCallback   onTap;
-  final bool           selected;
+  final VoidCallback onTap;
+  final bool selected;
 
   const _ResultSummaryCard({
     required this.result,
@@ -839,7 +885,8 @@ class _ResultSummaryCard extends StatelessWidget {
           color: _surface,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: selected ? _amber : (ok ? _green : _red).withValues(alpha: 0.4),
+            color:
+                selected ? _amber : (ok ? _green : _red).withValues(alpha: 0.4),
             width: selected ? 1.5 : 1,
           ),
         ),
@@ -859,15 +906,16 @@ class _ResultSummaryCard extends StatelessWidget {
                     ok ? 'Bypass succeeded' : 'Bypass failed',
                     style: TextStyle(
                       color: ok ? _green : _red,
-                      fontSize: 12, fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     ok
                         ? '${result.cookies.length} cookies  ·  '
-                          '${result.duration?.inSeconds ?? 0}s  ·  '
-                          '${result.attempts} attempt${result.attempts == 1 ? '' : 's'}'
+                            '${result.duration?.inSeconds ?? 0}s  ·  '
+                            '${result.attempts} attempt${result.attempts == 1 ? '' : 's'}'
                         : result.error ?? 'Unknown error',
                     style: const TextStyle(color: _muted, fontSize: 11),
                     overflow: TextOverflow.ellipsis,
@@ -876,8 +924,10 @@ class _ResultSummaryCard extends StatelessWidget {
               ),
             ),
             selected
-                ? const Icon(Icons.check_circle_rounded, color: _amber, size: 18)
-                : const Icon(Icons.chevron_right_rounded, color: _muted, size: 18),
+                ? const Icon(Icons.check_circle_rounded,
+                    color: _amber, size: 18)
+                : const Icon(Icons.chevron_right_rounded,
+                    color: _muted, size: 18),
           ],
         ),
       ),
@@ -887,10 +937,10 @@ class _ResultSummaryCard extends StatelessWidget {
 
 // ── Form Widgets ──────────────────────────────────────────────────────────────
 class _Stepper extends StatelessWidget {
-  final String           label;
-  final int              value;
-  final int              min;
-  final int              max;
+  final String label;
+  final int value;
+  final int min;
+  final int max;
   final ValueChanged<int> onChanged;
 
   const _Stepper({
@@ -919,21 +969,23 @@ class _Stepper extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _StepBtn(
-                icon:    Icons.remove,
+                icon: Icons.remove,
                 enabled: value > min,
-                onTap:   () => onChanged(value - 1),
+                onTap: () => onChanged(value - 1),
               ),
               Text(
                 '$value',
                 style: const TextStyle(
-                  color: _amber, fontSize: 20,
-                  fontWeight: FontWeight.w700, fontFamily: 'monospace',
+                  color: _amber,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace',
                 ),
               ),
               _StepBtn(
-                icon:    Icons.add,
+                icon: Icons.add,
                 enabled: value < max,
-                onTap:   () => onChanged(value + 1),
+                onTap: () => onChanged(value + 1),
               ),
             ],
           ),
@@ -944,18 +996,20 @@ class _Stepper extends StatelessWidget {
 }
 
 class _StepBtn extends StatelessWidget {
-  final IconData     icon;
-  final bool         enabled;
+  final IconData icon;
+  final bool enabled;
   final VoidCallback onTap;
 
-  const _StepBtn({required this.icon, required this.enabled, required this.onTap});
+  const _StepBtn(
+      {required this.icon, required this.enabled, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: enabled ? onTap : null,
       child: Container(
-        width: 28, height: 28,
+        width: 28,
+        height: 28,
         decoration: BoxDecoration(
           color: enabled ? _border : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
@@ -981,7 +1035,9 @@ class _LaunchButton extends StatelessWidget {
           foregroundColor: _bg,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           textStyle: const TextStyle(
-            fontWeight: FontWeight.w700, fontSize: 12, letterSpacing: 1.2,
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+            letterSpacing: 1.2,
           ),
         ),
         child: const Row(
@@ -998,7 +1054,7 @@ class _LaunchButton extends StatelessWidget {
 }
 
 class _AmberTextButton extends StatelessWidget {
-  final String       label;
+  final String label;
   final VoidCallback onTap;
   const _AmberTextButton({required this.label, required this.onTap});
 
@@ -1009,8 +1065,10 @@ class _AmberTextButton extends StatelessWidget {
       child: Text(
         label,
         style: const TextStyle(
-          color: _amber, fontSize: 10,
-          fontWeight: FontWeight.w700, letterSpacing: 0.8,
+          color: _amber,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
         ),
       ),
     );
@@ -1019,12 +1077,12 @@ class _AmberTextButton extends StatelessWidget {
 
 // ── Cookie Editor ─────────────────────────────────────────────────────────────
 class _CookiePair {
-  String name  = '';
+  String name = '';
   String value = '';
 }
 
 class _CookieRow extends StatefulWidget {
-  final _CookiePair  pair;
+  final _CookiePair pair;
   final VoidCallback onDelete;
   const _CookieRow({required this.pair, required this.onDelete});
 
@@ -1039,7 +1097,7 @@ class _CookieRowState extends State<_CookieRow> {
   @override
   void initState() {
     super.initState();
-    _nameCtrl  = TextEditingController(text: widget.pair.name)
+    _nameCtrl = TextEditingController(text: widget.pair.name)
       ..addListener(() => widget.pair.name = _nameCtrl.text);
     _valueCtrl = TextEditingController(text: widget.pair.value)
       ..addListener(() => widget.pair.value = _valueCtrl.text);
@@ -1064,11 +1122,14 @@ class _CookieRowState extends State<_CookieRow> {
               controller: _nameCtrl,
               autocorrect: false,
               style: const TextStyle(
-                fontFamily: 'monospace', color: _text, fontSize: 12,
+                fontFamily: 'monospace',
+                color: _text,
+                fontSize: 12,
               ),
               decoration: const InputDecoration(
                 hintText: 'name',
-                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               ),
               validator: (v) =>
                   v != null && v.isNotEmpty && v.contains(RegExp(r'[\s=;,]'))
@@ -1078,7 +1139,8 @@ class _CookieRowState extends State<_CookieRow> {
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 6),
-            child: Text('=', style: TextStyle(color: _muted, fontFamily: 'monospace')),
+            child: Text('=',
+                style: TextStyle(color: _muted, fontFamily: 'monospace')),
           ),
           Expanded(
             flex: 3,
@@ -1086,11 +1148,14 @@ class _CookieRowState extends State<_CookieRow> {
               controller: _valueCtrl,
               autocorrect: false,
               style: const TextStyle(
-                fontFamily: 'monospace', color: _text, fontSize: 12,
+                fontFamily: 'monospace',
+                color: _text,
+                fontSize: 12,
               ),
               decoration: const InputDecoration(
                 hintText: 'value',
-                contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               ),
             ),
           ),
@@ -1098,7 +1163,8 @@ class _CookieRowState extends State<_CookieRow> {
           GestureDetector(
             onTap: widget.onDelete,
             child: Container(
-              width: 30, height: 36,
+              width: 30,
+              height: 36,
               decoration: BoxDecoration(
                 color: _red.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(4),
@@ -1114,9 +1180,9 @@ class _CookieRowState extends State<_CookieRow> {
 
 // ── Toggle Row ────────────────────────────────────────────────────────────────
 class _ToggleRow extends StatelessWidget {
-  final String            label;
-  final String?           sublabel;
-  final bool              value;
+  final String label;
+  final String? sublabel;
+  final bool value;
   final ValueChanged<bool> onChanged;
 
   const _ToggleRow({
@@ -1148,7 +1214,8 @@ class _ToggleRow extends StatelessWidget {
                   label,
                   style: TextStyle(
                     color: value ? _amber : _text,
-                    fontSize: 12, fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 if (sublabel != null)
@@ -1156,7 +1223,8 @@ class _ToggleRow extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 3),
                     child: Text(
                       sublabel!,
-                      style: const TextStyle(color: _muted, fontSize: 10, height: 1.4),
+                      style: const TextStyle(
+                          color: _muted, fontSize: 10, height: 1.4),
                     ),
                   ),
               ],

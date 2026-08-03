@@ -14,7 +14,8 @@ extension LoggerExtensions on Logger {
     StackTrace? stackTrace,
     Map<String, dynamic>? metadata,
   }) {
-    final msg = '$message (error: $error, stacktrace: $stackTrace, metadata: $metadata)';
+    final msg =
+        '$message (error: $error, stacktrace: $stackTrace, metadata: $metadata)';
     severe(msg);
   }
 
@@ -35,10 +36,10 @@ extension LoggerExtensions on Logger {
 }
 
 String _colorForLevel(Level level) => switch (level) {
-      Level.SEVERE  => '❌ \x1B[31m',
+      Level.SEVERE => '❌ \x1B[31m',
       Level.WARNING => '⚠️  \x1B[33m',
-      Level.FINE    => '✅ \x1B[32m',
-      _             => '\x1B[37m',
+      Level.FINE => '✅ \x1B[32m',
+      _ => '\x1B[37m',
     };
 
 /// Sets up the root [Logger] to print to the Flutter debug console.

@@ -69,8 +69,8 @@ class ResultSheet extends StatelessWidget {
                     label: 'ERROR', value: result.error!, valueColor: _red),
                 const SizedBox(height: 16),
               ],
-              if (result.finalUrl != null)
-                _ResultRow(label: 'FINAL URL', value: result.finalUrl!),
+              if (result.finalUrl != result.url)
+                _ResultRow(label: 'FINAL URL', value: result.finalUrl),
               if (result.userAgent != null)
                 _ResultRow(
                   label: 'USER-AGENT',

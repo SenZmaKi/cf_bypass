@@ -16,7 +16,10 @@ import 'cf_browser_cookie.dart';
 ///       print(result.userAgent);
 ///       print(result.cfClearanceCookie);
 ///     }
-///     return replayOriginalRequest(result);
+///     final verified = await replayOriginalRequest(result);
+///     return verified
+///         ? CfWebViewSuccessDecision.accept
+///         : CfWebViewSuccessDecision.retry;
 ///   },
 /// )
 /// ```
@@ -28,9 +31,12 @@ class CfBypassResult {
   /// The original URL that was passed to [CfWebView].
   final String url;
 
-  /// The last URL the WebView navigated to, which may differ from [url] after
-  /// redirects.
-  final String? finalUrl;
+  /// The resolved main-frame URL of the WebView session.
+  ///
+  /// This may differ from [url] after redirects. It falls back to [url] when
+  /// navigation has not yet produced a destination, so consumers can always
+  /// identify the host that owns the captured cookies.
+  final String finalUrl;
 
   /// Human-readable error message when [success] is `false`.
   final String? error;
@@ -60,7 +66,7 @@ class CfBypassResult {
   const CfBypassResult({
     required this.success,
     required this.url,
-    this.finalUrl,
+    required this.finalUrl,
     this.error,
     this.exception,
     this.cfClearanceCookie,
@@ -101,7 +107,7 @@ class CfBypassResult {
     return CfBypassResult(
       success: true,
       url: url,
-      finalUrl: finalUrl,
+      finalUrl: finalUrl ?? url,
       cfClearanceCookie: CfCookieHelper.getCfClearanceCookie(cookies),
       ddosCookie: CfCookieHelper.getDdosCookie(cookies),
       userAgent: userAgent,
@@ -126,7 +132,7 @@ class CfBypassResult {
     return CfBypassResult(
       success: false,
       url: url,
-      finalUrl: finalUrl,
+      finalUrl: finalUrl ?? url,
       error: error,
       exception: exception,
       cfClearanceCookie: CfCookieHelper.getCfClearanceCookie(cookies),
