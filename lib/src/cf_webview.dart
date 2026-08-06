@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:logging/logging.dart';
@@ -38,8 +39,7 @@ enum CfWebViewSuccessDecision {
 /// failed terminally and the caller has handled that failure. Throwing from the
 /// callback reports a failed bypass through [CfWebView.onFailure].
 typedef CfWebViewSuccessCallback = FutureOr<CfWebViewSuccessDecision> Function(
-  CfBypassResult result,
-);
+    CfBypassResult result);
 
 /// Allows programmatic control of a running [CfWebView].
 ///
@@ -204,11 +204,13 @@ class CfWebView extends StatefulWidget {
 
 class _CfWebViewState extends State<CfWebView> {
   static final _log = Logger('CfWebView');
+  static Future<WebViewEnvironment>? _windowsEnvironment;
 
-  final CookieManager _cookieManager = CookieManager.instance();
+  late final CookieManager _cookieManager;
   final Set<String> _rejectedBypassFingerprints = {};
   final Set<String> _visitedUrls = {};
 
+  WebViewEnvironment? _webViewEnvironment;
   InAppWebViewController? _webController;
   String? _oldBypassFingerprint;
   String? _lastStartedUrl;
@@ -261,9 +263,12 @@ class _CfWebViewState extends State<CfWebView> {
   Future<void> _initialize() async {
     final attemptId = _beginAttempt();
     _log.fine(
-        '▶ init  url=${widget.url}  timeout=${widget.timeout.inSeconds}s  '
-        'stallThreshold=${widget.stallThreshold}  clearAllData=${widget.clearAllDataOnInit}  '
-        'clearCfCookies=${widget.clearCfCookiesOnInit}');
+      '▶ init  url=${widget.url}  timeout=${widget.timeout.inSeconds}s  '
+      'stallThreshold=${widget.stallThreshold}  clearAllData=${widget.clearAllDataOnInit}  '
+      'clearCfCookies=${widget.clearCfCookiesOnInit}',
+    );
+    await _initializeBrowserEnvironment();
+    if (!_isCurrentAttempt(attemptId)) return;
     if (widget.clearAllDataOnInit) {
       await _clearAllData();
     } else if (widget.clearCfCookiesOnInit) {
@@ -282,6 +287,24 @@ class _CfWebViewState extends State<CfWebView> {
     _startPolling(attemptId);
 
     if (mounted) setState(() => _ready = true);
+  }
+
+  Future<void> _initializeBrowserEnvironment() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.windows) {
+      _cookieManager = CookieManager.instance();
+      return;
+    }
+
+    final environment =
+        await (_windowsEnvironment ??= WebViewEnvironment.create());
+    _webViewEnvironment = environment;
+    _cookieManager = CookieManager.instance(
+      webViewEnvironment: environment,
+    );
+    _log.fine(
+      '🪟 Windows WebView and cookie manager bound to environment '
+      '${environment.id}',
+    );
   }
 
   int _beginAttempt() {
@@ -359,7 +382,8 @@ class _CfWebViewState extends State<CfWebView> {
     WebResourceError error,
   ) async {
     _log.warning(
-        '⚠ webview error  url=${request.url}  desc=${error.description}');
+      '⚠ webview error  url=${request.url}  desc=${error.description}',
+    );
 
     if (request.isForMainFrame == false ||
         widget.onError == null ||
@@ -423,9 +447,11 @@ class _CfWebViewState extends State<CfWebView> {
       _clearanceCheckInProgress = false;
       return;
     }
-    _log.fine('🔍 check  bypassCookiePresent=${fingerprint != null}  '
-        'bypassCookieChanged=${fingerprint != null && fingerprint != _oldBypassFingerprint}  '
-        'loop=$_loopCounter');
+    _log.fine(
+      '🔍 check  bypassCookiePresent=${fingerprint != null}  '
+      'bypassCookieChanged=${fingerprint != null && fingerprint != _oldBypassFingerprint}  '
+      'loop=$_loopCounter',
+    );
 
     final isChangedFingerprint =
         fingerprint != null && fingerprint != _oldBypassFingerprint;
@@ -467,8 +493,9 @@ class _CfWebViewState extends State<CfWebView> {
         final candidateKind =
             isChangedFingerprint ? 'changed fingerprint' : 'seed fingerprint';
         _log.info(
-            '✅ bypass candidate ($candidateKind)  cookies=${cookies.length}  '
-            'duration=${elapsed.inMilliseconds}ms  hasUserAgent=${userAgent.isNotEmpty}');
+          '✅ bypass candidate ($candidateKind)  cookies=${cookies.length}  '
+          'duration=${elapsed.inMilliseconds}ms  hasUserAgent=${userAgent.isNotEmpty}',
+        );
         await _validateSuccess(result, attemptId);
       } catch (e) {
         _fail(
@@ -496,7 +523,8 @@ class _CfWebViewState extends State<CfWebView> {
   void _countStall() {
     _loopCounter++;
     _log.fine(
-        '⏳ stall  loop=$_loopCounter / stallThreshold=${widget.stallThreshold}');
+      '⏳ stall  loop=$_loopCounter / stallThreshold=${widget.stallThreshold}',
+    );
     if (_loopCounter >= widget.stallThreshold && !_loopDetectedFired) {
       _loopDetectedFired = true;
       _log.warning('🔁 loop detected — firing onLoopDetected');
@@ -507,7 +535,8 @@ class _CfWebViewState extends State<CfWebView> {
   void _countRejectedFingerprintStall(int attemptId) {
     _loopCounter++;
     _log.fine(
-        '⏳ rejected fingerprint stall  loop=$_loopCounter / stallThreshold=${widget.stallThreshold}');
+      '⏳ rejected fingerprint stall  loop=$_loopCounter / stallThreshold=${widget.stallThreshold}',
+    );
     if (_loopCounter < widget.stallThreshold || _loopDetectedFired) return;
     _loopDetectedFired = true;
     _fail(
@@ -604,26 +633,32 @@ class _CfWebViewState extends State<CfWebView> {
     } catch (e) {
       _log.warning('⚠ error deleting all cookies', e);
     }
-    try {
-      await InAppWebViewController.clearAllCache();
-      _log.fine('🗑 HTTP cache cleared');
-    } catch (e) {
-      _log.warning('⚠ error clearing cache', e);
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      _log.fine('🗑 HTTP cache clearing unsupported on Windows');
+    } else {
+      try {
+        await InAppWebViewController.clearAllCache();
+        _log.fine('🗑 HTTP cache cleared');
+      } catch (e) {
+        _log.warning('⚠ error clearing cache', e);
+      }
     }
   }
 
   Future<void> _captureUserAgent() async {
     if (_webController == null) return;
     try {
-      final value = await _webController!
-          .evaluateJavascript(source: 'navigator.userAgent');
+      final value = await _webController!.evaluateJavascript(
+        source: 'navigator.userAgent',
+      );
       if (value is String && value.isNotEmpty) {
         _resolvedUserAgent = value;
       } else if (value != null) {
         _resolvedUserAgent = value.toString();
       }
       _log.fine(
-          '🌐 user-agent captured=${_resolvedUserAgent?.isNotEmpty == true}');
+        '🌐 user-agent captured=${_resolvedUserAgent?.isNotEmpty == true}',
+      );
     } catch (e) {
       _log.warning('⚠ error reading user-agent', e);
     }
@@ -657,7 +692,10 @@ class _CfWebViewState extends State<CfWebView> {
     final cookiesByScope = <String, CfBrowserCookie>{};
     for (final webUri in _cookieUrls) {
       final fallbackHost = Uri.parse(webUri.toString()).host;
-      final cookies = await _cookieManager.getCookies(url: webUri);
+      final cookies = await _cookieManager.getCookies(
+        url: webUri,
+        webViewController: _webController,
+      );
       for (final cookie in cookies) {
         final browserCookie = CfBrowserCookie(
           name: cookie.name,
@@ -744,6 +782,7 @@ class _CfWebViewState extends State<CfWebView> {
     if (!_ready) return const SizedBox.shrink();
 
     return InAppWebView(
+      webViewEnvironment: _webViewEnvironment,
       initialUrlRequest: URLRequest(url: WebUri(widget.url)),
       initialSettings: _settings,
       onWebViewCreated: (controller) {
