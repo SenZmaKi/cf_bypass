@@ -355,6 +355,7 @@ class _CfWebViewState extends State<CfWebView> {
         javaScriptEnabled: true,
         javaScriptCanOpenWindowsAutomatically: true,
         cacheEnabled: true,
+        darkMode: MediaQuery.platformBrightnessOf(context) == Brightness.dark,
         userAgent: widget.userAgent,
         thirdPartyCookiesEnabled: true,
         allowsInlineMediaPlayback: true,

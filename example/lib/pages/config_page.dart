@@ -43,8 +43,9 @@ class _HomePageState extends State<HomePage>
   String? _validateUrl(String? v) {
     if (v == null || v.trim().isEmpty) return 'Required';
     final uri = Uri.tryParse(v.trim());
-    if (uri == null || !uri.hasScheme || !uri.hasAuthority)
+    if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
       return 'Must be a full URL';
+    }
     if (!uri.scheme.startsWith('http')) return 'Must start with http(s)://';
     return null;
   }
